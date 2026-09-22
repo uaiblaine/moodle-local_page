@@ -43,11 +43,7 @@ if ($contextid > 0) {
 } else {
     $context = context_system::instance();
 }
-$listparams = [];
-if ($context->contextlevel == CONTEXT_COURSECAT) {
-    $listparams['contextid'] = $context->id;
-}
-$listurl = new moodle_url('/local/page/pages.php', $listparams);
+$listurl = local_page_list_url($context);
 
 // Set PAGE variables for the current page.
 if ($context->contextlevel == CONTEXT_COURSECAT) {
@@ -60,7 +56,17 @@ if ($context->contextlevel == CONTEXT_COURSECAT) {
 $PAGE->set_url($listurl);
 $PAGE->set_pagelayout('base');
 $PAGE->set_title(get_string('pagesetup_title', 'local_page'));
-$PAGE->set_heading(get_string('pagesetup_heading', 'local_page'));
+if ($context->contextlevel == CONTEXT_COURSECAT) {
+    /*
+     * Say whose pages these are. The heading is read with $alwaysreturnhidden, because
+     * core_course_category::get() otherwise throws 'cannotviewcategory' for a category the viewer
+     * cannot browse — and who may manage this screen was already decided by the capability check
+     * below. A heading is not the place to apply a second, different rule.
+     */
+    $PAGE->set_heading(core_course_category::get((int) $context->instanceid, MUST_EXIST, true)->get_formatted_name());
+} else {
+    $PAGE->set_heading(get_string('pagesetup_heading', 'local_page'));
+}
 
 // Force the user to login and check capabilities for managing pages in THIS context.
 require_login();

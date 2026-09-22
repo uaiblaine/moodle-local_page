@@ -156,6 +156,36 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php.
   palette, and never declare a `--mds-*` name (core's namespace).
 - **`.htaccess` ships.** It is listed in neither `.gitattributes`'
   `export-ignore` block nor `.gitignore` for that reason.
+- **`moodleform` throws the query string away when it picks its own action.**
+  With no action argument it posts to `strip_querystring($FULLME)`
+  (`lib/formslib.php:199`), which is harmless while every screen is site-wide
+  and fatal once a page's context travels in the URL: the editor posted back to
+  a bare `edit.php` and was refused on the wrong capability. `forms/edit.php`
+  names its action, and `MoodleQuickForm` turns a `moodle_url` into hidden
+  inputs (`lib/formslib.php:1746`). No unit test of the save path can see this
+  class of defect — they call the save path directly, and the request that never
+  arrived is the whole bug; `tests/behat/category_pages.feature` is what caught
+  it.
+- **`db/install.xml` hides an ordering defect in `db/upgrade.php`, and no gate in
+  the pipeline can see one.** A fresh install reads the XMLDB file and never
+  walks `xmldb_local_page_upgrade()`, so the PHPUnit site, the Behat site and
+  every `mdl ci` leg are provisioned straight past whatever order the steps are
+  in. The only thing that walks it is a real site coming from an earlier
+  release. An upgrade step that READS a column therefore has to be numbered
+  above the step that ADDS it: the slug normalisation reads `contextid` and was
+  numbered one version below the step adding it, which killed the whole site's
+  upgrade with a fatal and left it half applied — underneath a green suite, six
+  green static gates and two clean mutation sweeps. Verify any change to the upgrade
+  path by running `mdl upgrade` against a stack whose stored version is older
+  (`select value from m_config_plugins where plugin='local_page' and
+  name='version'`), never by a green test run.
+- **A new `lib.php` callback is invisible on the web until the plugin function
+  cache is rebuilt.** `get_plugins_with_function()` — which is how core finds
+  `local_page_extend_navigation_category_settings()` — is memoised in MUC, so the
+  category node simply does not appear after the function is written. A
+  `version.php` bump plus `mdl upgrade m502`, or `mdl purge m502`, is what makes
+  it visible. PHPUnit never reads that cache, so the tests pass while the browser
+  shows nothing, which is exactly the wrong way round to debug it.
 
 ## Testing notes
 
@@ -166,9 +196,13 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php.
   test names only the fields it is about.
 - `tests/lib_test.php` requires `lib.php` at the top of the file, because
   nothing in a PHPUnit run loads a local plugin's `lib.php` for you.
-- There are no Behat features yet. `mdl ci --behat` therefore proves nothing
-  here; the fleet's "Behat collected no scenarios" guard is conditional on the
-  plugin shipping `.feature` files, so it stays green either way.
+- `tests/behat/category_pages.feature` is the plugin's only Behat feature, tagged
+  `@local @local_page` and run with `mdl behat m502 @local_page`. Both scenarios
+  are deliberately non-JavaScript: they walk a category manager from the category
+  page to the pages screen and back, which is the one path no unit test can
+  assert because it is made of links. `mdl ci --behat` therefore proves something
+  here now, and the fleet's "Behat collected no scenarios" guard is live for this
+  plugin rather than skipped.
 
 ## When in doubt
 

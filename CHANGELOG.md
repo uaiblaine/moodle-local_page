@@ -1,5 +1,57 @@
 # CHANGELOG
 
+## [1.0.10+uai.5] - 2026-09-22
+
+The authoring UI for category pages. Until this release a category's pages could be listed, but
+every control on that screen was built for the site-wide context, so the screen led nowhere: three
+separate links took a category author out of their own category and into a screen that refuses
+them. Site-wide pages are untouched — every address the site-wide listing renders is byte for byte
+what upstream produced.
+
+### Added
+- **A category's administration menu now leads to its pages.** `local_page_extend_navigation_category_settings()`
+  hangs a "Custom pages" node on the node core builds in
+  `settings_navigation::load_category_settings()`, for holders of `local/page:managecategorypages`
+  **in that category** and nobody else. This was the missing half of the delegation: the admin
+  tree's "Manage pages" entry is gated on `local/page:addpages`, which a category manager does not
+  hold, so before this the category screens existed and nothing linked to them.
+- **`local_page_list_url()` and `local_page_edit_url()`**, the two addresses every screen is built
+  from. A listing address names the category through `contextid`; an editor address names an
+  existing page by id alone, and a new one by the category it will belong to.
+- `tests/navigation_test.php` and `tests/output/pages_list_test.php`, the plugin's first
+  `tests/behat/category_pages.feature`, and five more entries in `mutations/gates.conf`.
+
+### Changed
+- The listing screen of a category is headed with that category's name, so it says whose pages it
+  is showing. The site-wide screen keeps its own heading string.
+- A category page's card no longer prints a friendly URL. `wwwroot/<slug>` is the site-wide
+  address, answered by a web server rewrite for site pages only; printing it for a category page
+  would advertise an address that serves a different page.
+
+### Fixed
+- **The upgrade path died before it reached any of this.** The step that normalises friendly URLs
+  selects `contextid`, and it was numbered one version *below* the step that adds that column, so
+  every upgrade from an earlier release stopped there with a fatal and left the site's whole
+  upgrade half applied. The two steps have swapped savepoint numbers and the column is now added
+  first. A fresh install reads `db/install.xml`, where the column has always been declared, which
+  is why every test site and every CI leg was provisioned straight past the defect without ever
+  walking it.
+- **"Add New Page" on a category's listing opened the site-wide editor**, which checks
+  `local/page:addpages` and refused the very author whose screen had offered the button.
+- **Cancelling an edit redirected to the site-wide listing**, which refuses a category author for
+  the same reason. The cancel now returns to the listing of the context being edited.
+- **A category page could not be saved at all.** With no action given, `moodleform` posts to
+  `strip_querystring($FULLME)`, so the editor posted back to a bare `edit.php`, which resolved the
+  system context from a URL naming nothing and refused the author on `local/page:addpages` before
+  the save path ever read the hidden `contextid`. The form now names its own address, and
+  `MoodleQuickForm` carries the parameters across as hidden inputs. Every unit test of the save
+  path had stayed green through this, because they call the save path directly; only the Behat
+  walk-through could see it.
+- **A category card's delete link carried no context**, so the action resolved the system context,
+  refused a category manager on the capability, and refused even an administrator at the row
+  comparison, which rejects a row that does not belong to the context the screen was authorised
+  for. The link now names its category.
+
 ## [1.0.10+uai.4] - 2026-09-22
 
 What a category page may contain, and who may put it in front of the open web. Site-wide pages are

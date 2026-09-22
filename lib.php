@@ -68,6 +68,101 @@ function local_page_ogimage_filemanager_options(): array {
 }
 
 /**
+ * The listing screen's address for a context.
+ *
+ * Every screen and every redirect goes through this function rather than writing the URL out,
+ * because the contextid parameter is what keeps an author inside the category they were
+ * authorised in: a link that loses it lands on the site-wide screen, where pages.php checks
+ * local/page:addpages and refuses them. That is the shape three separate defects took before this
+ * stage — the add button, the cancel redirect and the delete link each built their own URL.
+ *
+ * A system context adds no parameter at all, so the site-wide addresses stay exactly what upstream
+ * produced.
+ *
+ * @param \core\context $context Context whose pages are listed
+ * @return \moodle_url
+ * @throws \coding_exception When the context is neither the system nor a course category
+ */
+function local_page_list_url(\core\context $context): \moodle_url {
+    $params = [];
+
+    // The stored convention is 0 for the system context, which is exactly the case that carries no
+    // parameter; reading it here rather than the context level keeps the mapping in one class.
+    if (\local_page\local\scope::stored_contextid($context) > 0) {
+        $params['contextid'] = (int) $context->id;
+    }
+
+    return new \moodle_url('/local/page/pages.php', $params);
+}
+
+/**
+ * The editor's address for a page, or for a new page in a context.
+ *
+ * An existing page is named by its id alone: edit.php reads the stored row and takes the context
+ * from it, so a context parameter beside the id would be a second opinion about a question the row
+ * has already answered. A NEW page has no row, so the category has to travel in the URL — and it
+ * travels as the category id rather than the context id, because that is what edit.php's
+ * ?category= parameter has meant since the context dimension was added.
+ *
+ * @param \core\context $context Context the page belongs to, or is to be created in
+ * @param int $pageid Existing page id, or 0 for a new page
+ * @return \moodle_url
+ * @throws \coding_exception When the context is neither the system nor a course category
+ */
+function local_page_edit_url(\core\context $context, int $pageid = 0): \moodle_url {
+    // Refuse a context level the plugin cannot author in, through the class that owns that rule.
+    $storedcontextid = \local_page\local\scope::stored_contextid($context);
+
+    $params = [];
+    if ($pageid > 0) {
+        $params['id'] = $pageid;
+    } else if ($storedcontextid > 0) {
+        $params['category'] = (int) $context->instanceid;
+    }
+
+    return new \moodle_url('/local/page/edit.php', $params);
+}
+
+/**
+ * Adds the category's own pages to its administration menu.
+ *
+ * Core calls this for every plugin declaring it, from settings_navigation::load_category_settings()
+ * (lib/classes/navigation/settings_navigation.php:1628-1633). It is the only entry point a category
+ * manager has: the admin tree's "Manage pages" page is gated on local/page:addpages and lists the
+ * site's pages, so without this node the category screens exist and nothing links to them.
+ *
+ * The capability is read at the category, never at the system context, which is what makes the
+ * delegation mean anything — a manager of one category gets the node there and in no other.
+ *
+ * @param \core\navigation\navigation_node $navigation The category settings node to extend
+ * @param \core\context $context The course category context the menu is being built for
+ * @return void
+ */
+function local_page_extend_navigation_category_settings(
+    \core\navigation\navigation_node $navigation,
+    \core\context $context
+): void {
+    // Core only ever calls this with a category context, but scope::capability() throws for any
+    // other level, so the guard comes first and the callback stays harmless if that ever changes.
+    if ($context->contextlevel != CONTEXT_COURSECAT) {
+        return;
+    }
+
+    if (!has_capability(\local_page\local\scope::capability($context), $context)) {
+        return;
+    }
+
+    $navigation->add(
+        get_string('categorypages', 'local_page'),
+        local_page_list_url($context),
+        \core\navigation\navigation_node::TYPE_SETTING,
+        null,
+        'local_page_pages',
+        new \core\output\pix_icon('i/edit', '')
+    );
+}
+
+/**
  * Whether $now falls inside a page's publish window.
  *
  * A bound of 0 (or missing) means "no bound", so a row with neither date set is always inside its

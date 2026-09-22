@@ -31,6 +31,7 @@ $string['accesslevel_negationonly'] = 'The required capability cannot be made up
 $string['accesslevel_unknowncapability'] = 'The capability \'{$a}\' does not exist on this site. Check the spelling and use the full name, such as <code>moodle/site:config</code>.';
 $string['addpage'] = "Add New Page";
 $string['backtolist'] = "Return to Pages List";
+$string['categorypages'] = 'Custom pages';
 $string['confirmdeletepage'] = 'Are you sure you want to delete the page \'{$a}\'?';
 $string['contenthtml'] = 'Content HTML';
 $string['contenthtml_description'] = 'Raw HTML Content';

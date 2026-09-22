@@ -61,20 +61,17 @@ function xmldb_local_page_upgrade($oldversion) {
     }
 
     if ($oldversion < 2026092201) {
-        // Friendly URLs are now unique among pages that have not been deleted, and a deleted page
-        // releases the one it was holding. Existing rows predate both rules, so bring them into
-        // line once: empty slugs are named, duplicates gain their page id, and deleted rows are
-        // mangled. The routine is idempotent, so re-running this step is harmless.
-        \local_page\local\slug::normalise_all();
-
-        upgrade_plugin_savepoint(true, 2026092201, 'local', 'page');
-    }
-
-    if ($oldversion < 2026092202) {
         // A page now records the context it belongs to. The column defaults to 0, which means the
         // system context: context ids are row ids assigned at install time, so no XMLDB default
         // can name one. Every existing row therefore reads as a site-wide page with nothing to
         // migrate, and categoryid stays NULL until a page is authored in a category.
+        //
+        // This step comes before the slug normalisation below, and the order is load-bearing: that
+        // routine selects contextid, because friendly URLs are unique per context from this release
+        // on. Numbered the other way round the normalisation queried a column that did not exist
+        // yet, and every upgrade from an earlier release died there with the whole site's upgrade
+        // half applied. A fresh install reads install.xml, where the column has always been
+        // present, which is why no test site and no CI leg ever walked the broken order.
 
         $table = new xmldb_table('local_page');
 
@@ -93,6 +90,19 @@ function xmldb_local_page_upgrade($oldversion) {
         if (!$dbman->index_exists($table, $index)) {
             $dbman->add_index($table, $index);
         }
+
+        upgrade_plugin_savepoint(true, 2026092201, 'local', 'page');
+    }
+
+    if ($oldversion < 2026092202) {
+        // Friendly URLs are now unique among pages that have not been deleted, and a deleted page
+        // releases the one it was holding. Existing rows predate both rules, so bring them into
+        // line once: empty slugs are named, duplicates gain their page id, and deleted rows are
+        // mangled. The routine is idempotent, so re-running this step is harmless.
+        //
+        // Every row the step above touched carries the 0 that means the system context, so this
+        // pass groups them all together and sees exactly the site-wide table it was written for.
+        \local_page\local\slug::normalise_all();
 
         upgrade_plugin_savepoint(true, 2026092202, 'local', 'page');
     }

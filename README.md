@@ -30,6 +30,17 @@ sanitiser exists for head markup. Showing a category page to visitors who are no
 separate capability, `local/page:publishcategorypages`: a page saved by somebody without it in that
 category is stored for logged-in users only, whatever the form posted.
 
+**Reaching them.** A manager of the category opens the category page, then its administration menu
+(`Category` in the secondary navigation) and the **Custom pages** entry. The node appears only for
+holders of `local/page:managecategorypages` in that category, so a manager of one category never
+sees another's. Everything the screen then offers stays inside the category: the list, the
+**Add New Page** button, the editor and its back link, cancelling an edit, and deleting a page.
+Site administrators keep the site-wide screen under *Site administration > Plugins > Local plugins >
+Custom pages > Manage pages*, which lists the site's own pages and not any category's.
+
+A category page has no `wwwroot/<slug>` friendly URL: that address is the site-wide convention,
+answered by the web server rewrite rules below for site pages only.
+
 ## Friendly URLs (`menuname`)
 
 Pages can use a **Friendly URL** slug (`menuname`) so viewers can open  

@@ -65,7 +65,17 @@ class pages_edit_product_form extends moodleform {
             $this->callingpage = $page->id;
         }
         $this->pagecontext = $context ?? context_system::instance();
-        parent::__construct(); // Call the parent constructor.
+
+        /*
+         * The action is named rather than left to moodleform's default, and the reason is the whole
+         * round trip. With no action given, moodleform posts to strip_querystring($FULLME)
+         * (lib/formslib.php:199) — the query string is thrown away — so a category page posted back
+         * to a bare edit.php, which resolves the SYSTEM context from a URL carrying nothing, and
+         * refused the author on local/page:addpages before the save path ever read the hidden
+         * contextid. Naming the address keeps the context across the POST. For a new site-wide page
+         * it is the same bare edit.php upstream posted to.
+         */
+        parent::__construct(local_page_edit_url($this->pagecontext, (int) $this->callingpage));
     }
 
     /**

@@ -64,9 +64,10 @@ final class edit_form_test extends \advanced_testcase {
      * and neither is set for free.
      *
      * @param \core\context|null $context Context the page being edited belongs to; system when omitted.
+     * @param mixed $page The stored row being edited, or false for a new page.
      * @return \pages_edit_product_form
      */
-    private function form(?\core\context $context = null): \pages_edit_product_form {
+    private function form(?\core\context $context = null, $page = false): \pages_edit_product_form {
         global $PAGE;
 
         $PAGE->set_context(\context_system::instance());
@@ -74,7 +75,43 @@ final class edit_form_test extends \advanced_testcase {
             $PAGE->set_url(new \moodle_url('/local/page/edit.php'));
         }
 
-        return new \pages_edit_product_form(false, $context);
+        return new \pages_edit_product_form($page, $context);
+    }
+
+    /**
+     * The form posts back to an address that still names the context it was opened in.
+     *
+     * moodleform's default action is strip_querystring($FULLME) (lib/formslib.php:199), which
+     * throws the query string away — so a category page posted back to a bare edit.php, which
+     * resolved the SYSTEM context from a URL carrying nothing and refused the author on
+     * local/page:addpages before the save path ever read the hidden contextid. Nothing in the
+     * unit tests of the save path could see that: they call the save path directly, and the
+     * request that never arrived is the whole defect.
+     *
+     * MoodleQuickForm turns a moodle_url action into hidden inputs (lib/formslib.php:1746-1748),
+     * so what is asserted here is what the browser will actually post back.
+     *
+     * @return void
+     */
+    public function test_the_form_posts_back_to_the_context_it_was_opened_in(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $category = $this->getDataGenerator()->create_category();
+        $context = \core\context\coursecat::instance($category->id);
+
+        // A new page in a category: the category travels, because no stored row can supply it.
+        $newpage = $this->mform($this->form($context));
+        $this->assertStringContainsString('name="category" value="' . $category->id . '"', $newpage->_pageparams);
+
+        // An existing page: its id travels, and edit.php reads the context from the stored row.
+        $stored = $this->pages()->create_category_page($category->id);
+        $existing = $this->mform($this->form($context, $stored));
+        $this->assertStringContainsString('name="id" value="' . $stored->id . '"', $existing->_pageparams);
+        $this->assertStringNotContainsString('name="category"', $existing->_pageparams);
+
+        // The control: a new site-wide page posts to the bare editor, exactly as upstream's did.
+        $this->assertSame('', $this->mform($this->form())->_pageparams);
     }
 
     /**

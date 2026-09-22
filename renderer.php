@@ -123,7 +123,7 @@ class local_page_renderer extends plugin_renderer_base {
             ['contextid' => \local_page\local\scope::stored_contextid($context)]
         );
 
-        $pageslist = new pages_list($records);
+        $pageslist = new pages_list($records, $context);
         return $this->render_pages_list($pageslist);
     }
 
@@ -230,7 +230,9 @@ class local_page_renderer extends plugin_renderer_base {
         $formcontext = $context ?? context_system::instance();
         $mform = new pages_edit_product_form($page, $formcontext);
         if ($mform->is_cancelled()) {
-            redirect(new moodle_url($CFG->wwwroot . '/local/page/pages.php'));
+            // Back to the listing of the context being edited. Without the context this landed on
+            // the site-wide screen, which refuses a category author outright.
+            redirect(local_page_list_url($formcontext));
         } else if ($data = $mform->get_data()) {
             require_once($CFG->libdir . '/formslib.php');
 

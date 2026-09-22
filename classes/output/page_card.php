@@ -56,6 +56,9 @@ class page_card implements renderable, templatable {
     /** @var string Menu name */
     protected $menuname;
 
+    /** @var \core\context|null Context the page belongs to; null means the system context. */
+    protected $context;
+
     /**
      * Constructor
      *
@@ -65,14 +68,16 @@ class page_card implements renderable, templatable {
      * @param int $pagedate Page start date
      * @param int $enddate Page end date
      * @param string|null $menuname Menu name
+     * @param \core\context|null $context Context the page belongs to; the system context by default
      */
-    public function __construct($id, $name, $status, $pagedate, $enddate, $menuname = null) {
+    public function __construct($id, $name, $status, $pagedate, $enddate, $menuname = null, ?\core\context $context = null) {
         $this->id = $id;
         $this->name = $name;
         $this->status = $status;
         $this->pagedate = $pagedate;
         $this->enddate = $enddate;
         $this->menuname = $menuname;
+        $this->context = $context;
     }
     /**
      * Export data for template
@@ -82,6 +87,9 @@ class page_card implements renderable, templatable {
      */
     public function export_for_template(renderer_base $output) {
         global $CFG;
+
+        $context = $this->context ?? \core\context\system::instance();
+        $iscategory = $context->contextlevel == CONTEXT_COURSECAT;
 
         $data = new stdClass();
         $data->id = $this->id;
@@ -138,13 +146,26 @@ class page_card implements renderable, templatable {
         $data->editurl = new moodle_url($CFG->wwwroot . '/local/page/edit.php', ['id' => $this->id]);
         $data->pageurl = $CFG->wwwroot . '/local/page/?id=' . $this->id;
         $data->viewurl = new moodle_url($CFG->wwwroot . '/local/page/', ['id' => $this->id]);
-        $data->deleteurl = new moodle_url(
-            '/local/page/pages.php',
-            ['pagedel' => $this->id, 'sesskey' => \sesskey()]
-        );
+        $deleteparams = ['pagedel' => $this->id, 'sesskey' => \sesskey()];
+        if ($iscategory) {
+            /*
+             * The delete action resolves its context from this parameter, checks the capability
+             * there and then refuses a row that does not belong to it. Without the parameter the
+             * link asks the site-wide screen to delete a category's page, and that is refused
+             * twice over — by the capability for a category manager, and by the row comparison
+             * even for an administrator.
+             */
+            $deleteparams['contextid'] = (int) $context->id;
+        }
+        $data->deleteurl = new moodle_url('/local/page/pages.php', $deleteparams);
 
-        // Add friendly URL if menuname exists.
-        if ($this->menuname) {
+        /*
+         * Add friendly URL if menuname exists. A category page never gets one: wwwroot/<slug> is
+         * the site-wide convention, answered by the web server rewrite for site pages only, and a
+         * category page's address is a routed one that arrives in a later stage. Printing the
+         * site-wide form here would advertise an address that serves somebody else's page.
+         */
+        if ($this->menuname && !$iscategory) {
             $data->menuname = $this->menuname;
             $data->friendlyurl = $CFG->wwwroot . '/' . $this->menuname;
         }

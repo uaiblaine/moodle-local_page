@@ -41,13 +41,18 @@ class pages_list implements renderable, templatable {
     /** @var array Array of page records */
     protected $pages;
 
+    /** @var \core\context|null Context the listed pages belong to; null means the system context. */
+    protected $context;
+
     /**
      * Constructor
      *
      * @param array $pages Array of page records from database
+     * @param \core\context|null $context Context the pages belong to; the system context by default
      */
-    public function __construct($pages) {
+    public function __construct($pages, ?\core\context $context = null) {
         $this->pages = $pages;
+        $this->context = $context;
     }
 
     /**
@@ -58,6 +63,9 @@ class pages_list implements renderable, templatable {
      */
     public function export_for_template(renderer_base $output) {
         global $CFG;
+        require_once($CFG->dirroot . '/local/page/lib.php');
+
+        $context = $this->context ?? \core\context\system::instance();
 
         $data = new stdClass();
 
@@ -74,7 +82,8 @@ class pages_list implements renderable, templatable {
                 $page->status,
                 $page->pagedate,
                 $page->enddate,
-                $page->menuname
+                $page->menuname,
+                $context
             );
             $pagecarddata = $pagecard->export_for_template($output);
 
@@ -93,8 +102,12 @@ class pages_list implements renderable, templatable {
         $data->draftpages = $draftpages;
         $data->archivedpages = $archivedpages;
 
-        // Add page URL.
-        $data->addpageurl = new moodle_url($CFG->wwwroot . '/local/page/edit.php');
+        /*
+         * The address of the editor for a NEW page in this context. A category's button has to
+         * carry the category, or it opens the site-wide editor and the author is refused there by
+         * a capability they were never meant to hold.
+         */
+        $data->addpageurl = local_page_edit_url($context);
 
         return $data;
     }

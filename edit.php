@@ -106,8 +106,7 @@ if (local_page_xy_simple_content_builder_is_available()) {
 echo $OUTPUT->header(); // Output the page header.
 
 // Display page title with back link.
-$backparams = $context->contextlevel == CONTEXT_COURSECAT ? ['contextid' => $context->id] : [];
-$backlink = new moodle_url('/local/page/pages.php', $backparams); // Create a URL for the back link.
+$backlink = local_page_list_url($context); // Create a URL for the back link.
 $backtext = get_string('backtolist', 'local_page'); // Get the back link text.
 $title = get_string('custompage_title', 'local_page'); // Get the page title.
 $previewlink = new moodle_url('/local/page/index.php', ['id' => $pageid]); // Create a URL for the preview link.

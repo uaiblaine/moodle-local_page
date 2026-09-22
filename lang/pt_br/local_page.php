@@ -30,6 +30,7 @@ $string['accesslevel_negationonly'] = 'A capacidade obrigatória não pode ser f
 $string['accesslevel_unknowncapability'] = 'A capacidade \'{$a}\' não existe neste site. Verifique a grafia e use o nome completo, como <code>moodle/site:config</code>.';
 $string['addpage'] = 'Adicionar nova página';
 $string['backtolist'] = 'Voltar à lista de páginas';
+$string['categorypages'] = 'Páginas personalizadas';
 $string['confirmdeletepage'] = 'Tem certeza de que deseja excluir a página \'{$a}\'?';
 $string['contenthtml'] = 'HTML de conteúdo';
 $string['contenthtml_description'] = 'Conteúdo HTML bruto';
