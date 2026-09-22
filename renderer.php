@@ -103,17 +103,24 @@ class local_page_renderer extends plugin_renderer_base {
      *
      * List the pages for the user to view
      *
+     * The listing is per context: the site-wide screen shows the pages stored with contextid 0 and
+     * a category's screen shows that category's. The parameter carries a context object rather
+     * than the stored value so that callers cannot get the 0-means-system convention wrong; see
+     * {@see \local_page\local\scope}.
+     *
+     * @param \core\context $context Context whose pages are listed
      * @return string
      */
-    public function list_pages() {
+    public function list_pages(\core\context $context) {
         global $DB;
 
-        // Get all non-deleted pages ordered by name.
+        // Get all non-deleted pages of this context, ordered by name.
         $records = $DB->get_records_sql(
             "SELECT id, pagename, pagedata, status, menuname, pagedate, enddate
              FROM {local_page}
-             WHERE deleted = 0
-             ORDER BY pagename"
+             WHERE deleted = 0 AND contextid = :contextid
+             ORDER BY pagename",
+            ['contextid' => \local_page\local\scope::stored_contextid($context)]
         );
 
         $pageslist = new pages_list($records);
@@ -204,16 +211,17 @@ class local_page_renderer extends plugin_renderer_base {
      * Save the page to the database and redirect the user
      *
      * @param bool $page
+     * @param \core\context|null $context Context the editor is working in; the system context by default
      */
-    public function save_page($page = false) {
+    public function save_page($page = false, ?\core\context $context = null) {
         global $CFG, $DB;
         require_once($CFG->dirroot . '/local/page/lib.php');
-        $mform = new pages_edit_product_form($page);
+        $formcontext = $context ?? context_system::instance();
+        $mform = new pages_edit_product_form($page, $formcontext);
         if ($mform->is_cancelled()) {
             redirect(new moodle_url($CFG->wwwroot . '/local/page/pages.php'));
         } else if ($data = $mform->get_data()) {
             require_once($CFG->libdir . '/formslib.php');
-            $context = context_system::instance();
 
             /*
              * Re-check the posted id before anything is written. The form was rendered under a
@@ -221,23 +229,45 @@ class local_page_renderer extends plugin_renderer_base {
              * deleted in between, so the write path has to establish for itself that the target
              * exists and that this caller may edit it. The row it returns is what the id below is
              * taken from — never the posted value.
+             *
+             * The posted context is re-checked in the same call, and for an EXISTING page it is
+             * then discarded: local_page_save_target_context() answers with the stored row's
+             * context, so a page cannot be moved between contexts by editing a hidden field.
              */
-            $editable = local_page_require_editable_page((int) $data->id);
+            $postedcontextid = (int) ($data->contextid ?? 0);
+            $editable = local_page_require_editable_page((int) $data->id, $postedcontextid);
+            $writecontext = local_page_save_target_context($editable, $postedcontextid);
+            $iscategory = $writecontext->contextlevel == CONTEXT_COURSECAT;
+            $itemid = $iscategory ? (int) ($editable->id ?? 0) : 0;
+
             $draftitemid = file_get_submitted_draft_itemid('pagecontent');
             $pagecontenttext = '';
             if (isset($data->pagecontent) && is_array($data->pagecontent) && array_key_exists('text', $data->pagecontent)) {
                 $pagecontenttext = $data->pagecontent['text'];
             }
 
-            $savedpagecontent = file_save_draft_area_files(
-                $draftitemid,
-                $context->id,
-                'local_page',
-                'pagecontent',
-                0,
-                ['subdirs' => true],
-                $pagecontenttext
-            );
+            /*
+             * Where the embedded files live. A site-wide page keeps the upstream arrangement —
+             * one shared area under itemid 0 — because every stored URL of every existing page
+             * names that itemid. A category page uses its own id instead, which is what lets the
+             * pluginfile callback authorise a file with one row lookup rather than by searching
+             * the content of every page. A NEW category page has no id yet, so its text is stored
+             * raw and rewritten immediately after the insert, below.
+             */
+            $newcategorypage = $iscategory && $itemid <= 0;
+            if ($newcategorypage) {
+                $savedpagecontent = $pagecontenttext;
+            } else {
+                $savedpagecontent = file_save_draft_area_files(
+                    $draftitemid,
+                    $writecontext->id,
+                    'local_page',
+                    'pagecontent',
+                    $itemid,
+                    ['subdirs' => true],
+                    $pagecontenttext
+                );
+            }
 
             $data->pagedata = '';
 
@@ -263,6 +293,10 @@ class local_page_renderer extends plugin_renderer_base {
 
             $recordpage->pagecontent = $savedpagecontent;
 
+            // The context the page belongs to, in the stored convention (0 is the system scope).
+            $recordpage->contextid = \local_page\local\scope::stored_contextid($writecontext);
+            $recordpage->categoryid = $iscategory ? (int) $writecontext->instanceid : null;
+
             /*
              * The uniqueness of a friendly URL is decided by a read followed by a write, so two
              * editors saving the same slug at the same moment would both pass the form's check and
@@ -279,7 +313,11 @@ class local_page_renderer extends plugin_renderer_base {
             try {
                 if (
                     $recordpage->menuname !== ''
-                    && \local_page\local\slug::is_taken($recordpage->menuname, (int) $recordpage->id)
+                    && \local_page\local\slug::is_taken(
+                        $recordpage->menuname,
+                        (int) $recordpage->id,
+                        (int) $recordpage->contextid
+                    )
                 ) {
                     throw new \moodle_exception('menuname_taken', 'local_page');
                 }
@@ -298,10 +336,36 @@ class local_page_renderer extends plugin_renderer_base {
                 $lock->release();
             }
 
+            if ($result && $result > 0 && $newcategorypage) {
+                /*
+                 * The itemid of a category page's files is its own id, which exists only now. Save
+                 * the draft area under it and store the rewritten text over the raw one, so the
+                 * @@PLUGINFILE@@ placeholders point at the area the files actually landed in.
+                 */
+                $rewritten = file_save_draft_area_files(
+                    $draftitemid,
+                    $writecontext->id,
+                    'local_page',
+                    'pagecontent',
+                    (int) $result,
+                    ['subdirs' => true],
+                    $pagecontenttext
+                );
+                $DB->set_field('local_page', 'pagecontent', $rewritten, ['id' => (int) $result]);
+            }
+
             if ($result && $result > 0) {
                 $options = local_page_ogimage_filemanager_options();
                 if (isset($data->ogimage_filemanager)) {
-                    file_postupdate_standard_filemanager($data, 'ogimage', $options, $context, 'local_page', 'ogimage', $result);
+                    file_postupdate_standard_filemanager(
+                        $data,
+                        'ogimage',
+                        $options,
+                        $writecontext,
+                        'local_page',
+                        'ogimage',
+                        $result
+                    );
                 }
                 redirect(new moodle_url($CFG->wwwroot . '/local/page/edit.php', ['id' => $result]));
             }
@@ -313,9 +377,11 @@ class local_page_renderer extends plugin_renderer_base {
      * Show the page information to edit
      *
      * @param bool $page
+     * @param \core\context|null $context Context the editor is working in; the system context by default
      */
-    public function edit_page($page = false) {
-        $mform = new pages_edit_product_form($page);
+    public function edit_page($page = false, ?\core\context $context = null) {
+        $editcontext = $context ?? context_system::instance();
+        $mform = new pages_edit_product_form($page, $editcontext);
         $forform = new stdClass();
         $forform->pagecontent['text'] = $page->pagecontent;
         $forform->pagename = $page->pagename;
@@ -329,6 +395,8 @@ class local_page_renderer extends plugin_renderer_base {
         $forform->metatitle = $page->metatitle;
         $forform->metarobots = $page->metarobots;
         $forform->id = $page->id;
+        // The hidden transport carries the stored convention, which is what the save path re-checks.
+        $forform->contextid = \local_page\local\scope::stored_contextid($editcontext);
         $forform->pagedate = $page->pagedate;
         $forform->enddate = $page->enddate;
         $forform->onlyloggedin = $page->onlyloggedin;

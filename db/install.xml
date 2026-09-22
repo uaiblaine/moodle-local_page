@@ -1,8 +1,10 @@
-<XMLDB xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" PATH="local/page/db" VERSION="20251008" COMMENT="XMLDB file for Moodle local/page" xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
+<XMLDB xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" PATH="local/page/db" VERSION="20260922" COMMENT="XMLDB file for Moodle local/page" xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
     <TABLES>
         <TABLE NAME="local_page" COMMENT="Custom pages for the local_page plugin">
             <FIELDS>
                 <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true" COMMENT="Primary key for the table" />
+                <FIELD NAME="contextid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The context the page belongs to; 0 means the system context, resolved in code because context ids are not compile-time constants" />
+                <FIELD NAME="categoryid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="The course category when contextid is a category context, else NULL" />
                 <FIELD NAME="pagename" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="Name of the custom page" />
                 <FIELD NAME="meta" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Meta information for the page" />
                 <FIELD NAME="pagecontent" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="HTML content of the page" />
@@ -28,6 +30,7 @@
             <INDEXES>
                 <INDEX NAME="deleted" UNIQUE="false" FIELDS="deleted" COMMENT="Index for deleted flag to improve query performance" />
                 <INDEX NAME="pagename" UNIQUE="false" FIELDS="pagename" COMMENT="Index for page name searches" />
+                <INDEX NAME="contextmenuname" UNIQUE="false" FIELDS="contextid, menuname" COMMENT="Index for resolving a friendly URL within one context" />
             </INDEXES>
         </TABLE>
     </TABLES>

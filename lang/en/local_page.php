@@ -48,6 +48,7 @@ $string['hidetitle'] = 'Hide Title';
 $string['menu_name'] = 'Friendly URL';
 $string['menu_name_description'] = 'Friendly URL Description';
 $string['menu_name_description_help'] = 'Provide a URL slug for the page (letters, numbers, hyphen, underscore only; invalid characters are removed on save). Web server rewrite rules must map requests such as <strong>about-us</strong> to this plugin\'s viewer if you use root-level URLs.';
+$string['menuname_reserved'] = 'This friendly URL is reserved by Moodle itself. Addresses such as <code>login</code>, <code>course</code>, <code>pluginfile</code> or anything starting with a plugin type such as <code>local_</code> are answered by the site, so a page holding one would either never be reached or would hide part of Moodle. Choose a different one.';
 $string['menuname_taken'] = 'This friendly URL is already used by another page. Choose a different one.';
 $string['metaauthor'] = 'Meta Author';
 $string['metaauthor_description'] = 'Meta Author Description';
@@ -86,6 +87,8 @@ $string['onlyloggedin_description_help'] = "<ul>
     <li>Guest users will see a message that the page is only visible to logged in users.</li>
 </ul>";
 $string['page:addpages'] = 'Add and edit custom site pages (trusted HTML, raw head meta, and Content HTML—declared as RISK_XSS). The default course creator role can perform this site-wide; assign only to roles that should be able to inject arbitrary markup for all visitors.';
+$string['page:managecategorypages'] = 'Create and edit the custom pages that belong to a course category. Holders author pages only in the categories where they hold the capability; the site-wide pages stay with \'Add and edit custom site pages\'. Declared as RISK_SPAM because a page carries author-written text.';
+$string['page:publishcategorypages'] = 'Publish a category page to visitors who are not logged in. Deliberately separate from authoring: writing a page and putting it in front of the open web are different acts, and a role may be trusted with one and not the other. Declared now and enforced by the publishing gate that follows it.';
 $string['page_content_description'] = 'Enter the content for the page here.';
 $string['page_name'] = 'Title of the Page';
 $string['pagedate_description'] = 'Select the date when this page will be published - a future date will restrict access until that date.';

@@ -47,6 +47,7 @@ $string['hidetitle'] = 'Ocultar título';
 $string['menu_name'] = 'URL amigável';
 $string['menu_name_description'] = 'Descrição da URL amigável';
 $string['menu_name_description_help'] = 'Informe o identificador de URL da página (apenas letras, números, hífen e sublinhado; caracteres inválidos são removidos ao salvar). As regras de reescrita do servidor web precisam direcionar requisições como <strong>sobre-nos</strong> ao visualizador deste plugin, caso sejam usadas URLs na raiz do site.';
+$string['menuname_reserved'] = 'Esta URL amigável é reservada pelo próprio Moodle. Endereços como <code>login</code>, <code>course</code>, <code>pluginfile</code> ou qualquer um iniciado por um tipo de plugin, como <code>local_</code>, são atendidos pelo site: uma página que ocupasse um deles nunca seria alcançada ou esconderia parte do Moodle. Escolha uma diferente.';
 $string['menuname_taken'] = 'Esta URL amigável já está em uso por outra página. Escolha uma diferente.';
 $string['metaauthor'] = 'Meta autor';
 $string['metaauthor_description'] = 'Descrição do meta autor';
@@ -85,6 +86,8 @@ $string['onlyloggedin_description_help'] = '<ul>
     <li>Usuários visitantes veem uma mensagem informando que a página é visível somente para usuários autenticados.</li>
 </ul>';
 $string['page:addpages'] = 'Adicionar e editar páginas personalizadas do site (HTML confiável, metadados brutos de cabeçalho e HTML de conteúdo — declarada como RISK_XSS). O papel padrão de criador de curso pode exercê-la em todo o site; atribua-a apenas a papéis que devam poder injetar marcação arbitrária para todos os visitantes.';
+$string['page:managecategorypages'] = 'Criar e editar as páginas personalizadas que pertencem a uma categoria de cursos. Quem tem esta permissão edita páginas apenas nas categorias em que ela foi concedida; as páginas do site continuam sob \'Adicionar e editar páginas personalizadas do site\'. Declarada como RISK_SPAM porque a página carrega texto escrito pelo autor.';
+$string['page:publishcategorypages'] = 'Publicar uma página de categoria para visitantes não autenticados. Propositalmente separada da edição: escrever uma página e colocá-la diante da web aberta são atos diferentes, e um papel pode merecer confiança para um e não para o outro. Declarada agora e aplicada pela verificação de publicação que vem a seguir.';
 $string['page_content_description'] = 'Informe aqui o conteúdo da página.';
 $string['page_name'] = 'Título da página';
 $string['pagedate_description'] = 'Selecione a data em que esta página será publicada — uma data no futuro restringe o acesso até essa data.';

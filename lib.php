@@ -139,22 +139,25 @@ function local_page_ogimage_is_servable(object $page): bool {
  * resurrected by replaying the form. For an id of 0 or less — a new page — there is no row to read
  * and only the capability is checked.
  *
- * The capability is checked at the system context because every {local_page} row lives there today.
- * Stage 2 gives pages a context of their own and re-derives the context from the returned row; the
- * row is returned rather than a bare bool precisely so that change stays inside this function.
+ * The capability is the one that governs the page's own context: local/page:addpages for a
+ * site-wide page, local/page:managecategorypages for a page belonging to a course category. For an
+ * existing page that context comes from the STORED row and the $contextid argument is ignored
+ * entirely — a posted context may not move a page, and the row is returned rather than a bare bool
+ * so that every caller writes to the context the row actually has.
  *
  * @param int $pageid Page id as posted, or 0 for a new page
+ * @param int $contextid Stored contextid the new page is to be created in; 0 is the system scope
  * @return \stdClass|null The stored row, or null when creating a new page
  * @throws \moodle_exception When the id names no live page
- * @throws \required_capability_exception When the caller may not edit pages
+ * @throws \coding_exception When the context is neither the system nor a course category
+ * @throws \required_capability_exception When the caller may not edit pages there
  */
-function local_page_require_editable_page(int $pageid): ?\stdClass {
+function local_page_require_editable_page(int $pageid, int $contextid = 0): ?\stdClass {
     global $DB;
 
-    $context = context_system::instance();
-
     if ($pageid <= 0) {
-        require_capability('local/page:addpages', $context);
+        $context = \local_page\local\scope::context((object) ['contextid' => $contextid]);
+        require_capability(\local_page\local\scope::capability($context), $context);
         return null;
     }
 
@@ -163,9 +166,51 @@ function local_page_require_editable_page(int $pageid): ?\stdClass {
         throw new \moodle_exception('pagenotfound', 'local_page');
     }
 
-    require_capability('local/page:addpages', $context);
+    $context = \local_page\local\scope::context($row);
+    require_capability(\local_page\local\scope::capability($context), $context);
 
     return $row;
+}
+
+/**
+ * Whether a stored row belongs to a context.
+ *
+ * The comparison is on the STORED convention, where the system context is 0 (see
+ * {@see \local_page\local\scope}), so a row and a context object can be compared without loading
+ * the row's context at all.
+ *
+ * It exists as a function because the listing screen's delete action needs it and pages.php is a
+ * script: a guard that only ever runs inside a script cannot be held by a test, and an unheld
+ * guard is the one that quietly stops working.
+ *
+ * @param \stdClass $row Row from {local_page}
+ * @param \core\context $context Context the caller is acting in
+ * @return bool
+ * @throws \coding_exception When the context is neither the system nor a course category
+ */
+function local_page_page_in_context(\stdClass $row, \core\context $context): bool {
+    return (int) ($row->contextid ?? 0) === \local_page\local\scope::stored_contextid($context);
+}
+
+/**
+ * The context a save writes to.
+ *
+ * For an existing page it is the stored row's context, whatever the form posted: the hidden field
+ * travels through the browser, and honouring it would let a page be moved between contexts — and
+ * with it, out of the reach of the capability that was checked when the form was rendered. For a
+ * new page there is no row yet, so the posted value is all there is; it has already been through
+ * local_page_require_editable_page(), which is what establishes that the caller may write there.
+ *
+ * @param \stdClass|null $editable The stored row, or null when creating a new page
+ * @param int $contextid Stored contextid as posted; 0 is the system scope
+ * @return \core\context
+ */
+function local_page_save_target_context(?\stdClass $editable, int $contextid): \core\context {
+    if ($editable !== null) {
+        return \local_page\local\scope::context($editable);
+    }
+
+    return \local_page\local\scope::context((object) ['contextid' => $contextid]);
 }
 
 /**
@@ -175,6 +220,11 @@ function local_page_require_editable_page(int $pageid): ?\stdClass {
  * site configuration capability override). Pages without a positive database id or with soft-delete
  * set are never viewable.
  *
+ * Every capability it reads — the site configuration override, the entries of accesslevel, and the
+ * editor-preview branch — is evaluated at the page's OWN context. A page belonging to a course
+ * category is previewed by whoever may author that category's pages, not by whoever may author the
+ * site's, and an accesslevel entry means what it means where the page lives.
+ *
  * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage} with the same fields
  * @return bool
  */
@@ -182,8 +232,6 @@ function local_page_user_can_view_page(object $page): bool {
     global $CFG;
 
     require_once($CFG->libdir . '/accesslib.php');
-
-    $context = context_system::instance();
 
     // Not a persisted row (e.g. missing id lookup) — never treat as publicly viewable.
     if (empty((int) ($page->id ?? 0))) {
@@ -194,6 +242,9 @@ function local_page_user_can_view_page(object $page): bool {
     if ((int) ($page->deleted ?? 0) !== 0) {
         return false;
     }
+
+    // Resolved after the two cheap refusals above, because an unsaved row has no context to read.
+    $context = \local_page\local\scope::context($page);
 
     if (has_capability('moodle/site:config', $context)) {
         return true;
@@ -222,7 +273,7 @@ function local_page_user_can_view_page(object $page): bool {
 
     // Same people who can edit custom pages may preview draft/archived/scheduled content
     // (status and publish window still apply to everyone else).
-    if (has_capability('local/page:addpages', $context)) {
+    if (has_capability(\local_page\local\scope::capability($context), $context)) {
         return $canaccess && $permissions;
     }
 
@@ -268,10 +319,20 @@ function local_page_haystack_contains_pluginfile_needle(string $hay, string $nee
  * Candidate rows are still found with SQL LIKE on the filename; references are then confirmed with
  * anchored matching so one filename cannot satisfy a request for a strict prefix of another.
  *
- * @param int $contextid System context id
+ * Only rows of the context the file was requested through are searched, and that clause is what
+ * keeps the shared site-wide area shared between the right pages. Everything there is stored under
+ * itemid 0, so ownership of a file can only be read out of the page content that names it — and a
+ * page of another context is written by other people: a category's pages are authored by whoever
+ * holds local/page:managecategorypages there. Without the clause such an author could paste a
+ * reference to a site-wide file into their own page and, because their own page is viewable, make
+ * that file servable whatever the state of the site-wide page it really belongs to.
+ *
+ * @param int $contextid Context id the file was requested through
  * @param string $filepath File path with leading/trailing slashes (e.g. /sub/)
  * @param string $filename File name
  * @return stdClass[] List of page records (values only)
+ * @throws \dml_missing_record_exception When the context id names no context
+ * @throws \coding_exception When the context is neither the system nor a course category
  */
 function local_page_pages_referencing_pagecontent_file(int $contextid, string $filepath, string $filename): array {
     global $DB;
@@ -320,7 +381,8 @@ function local_page_pages_referencing_pagecontent_file(int $contextid, string $f
         $params['pce'] = '%' . $fnencesc . '%';
         $params['che'] = '%' . $fnencesc . '%';
     }
-    $sql = "SELECT * FROM {local_page} WHERE deleted = 0 AND (" . implode(' OR ', $likesql) . ")";
+    $params['ctx'] = \local_page\local\scope::stored_contextid(\core\context::instance_by_id($contextid, MUST_EXIST));
+    $sql = "SELECT * FROM {local_page} WHERE deleted = 0 AND contextid = :ctx AND (" . implode(' OR ', $likesql) . ")";
 
     $candidates = $DB->get_recordset_sql($sql, $params);
     $matches = [];
@@ -341,7 +403,7 @@ function local_page_pages_referencing_pagecontent_file(int $contextid, string $f
 /**
  * Whether the current user may fetch a pagecontent area file via pluginfile.php.
  *
- * @param int $contextid System context id
+ * @param int $contextid Context id the file was requested through
  * @param string $filepath Stored file path (with slashes)
  * @param string $filename File name
  * @return bool
@@ -378,8 +440,8 @@ function local_page_user_can_serve_pagecontent_file(int $contextid, string $file
 function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $args, $forcedownload, array $options = []) {
     global $DB;
 
-    // Check the contextlevel is as expected for local plugins.
-    if ($context->contextlevel != CONTEXT_SYSTEM) {
+    // Check the contextlevel is as expected: a page lives in the system context or in a category.
+    if ($context->contextlevel != CONTEXT_SYSTEM && $context->contextlevel != CONTEXT_COURSECAT) {
         return false;
     }
 
@@ -403,10 +465,30 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
         // Construct the file path from the remaining arguments.
         $filepath = $args ? '/' . implode('/', $args) . '/' : '/';
 
+        /*
+         * A category page keeps its files under its own id, in its own context, so the itemid IS
+         * the page id and one row lookup authorises the file — no LIKE search over the content of
+         * every page, which is what the system area needs because everything there shares itemid
+         * 0. Both halves of the WHERE carry weight: without contextid this context would serve a
+         * page belonging to a different category, and without deleted = 0 it would serve the
+         * files of a page that has been deleted.
+         */
+        $iscategoryfile = $context->contextlevel == CONTEXT_COURSECAT;
+        if ($iscategoryfile) {
+            $categorypage = $DB->get_record('local_page', [
+                'id' => $itemid,
+                'contextid' => $context->id,
+                'deleted' => 0,
+            ]);
+            if (!$categorypage || !local_page_user_can_view_page($categorypage)) {
+                return false;
+            }
+        }
+
         // Attempt to retrieve the file from the pagecontent area.
         $file = $fs->get_file($context->id, 'local_page', 'pagecontent', $itemid, $filepath, $filename);
 
-        if ($file && !$file->is_directory()) {
+        if (!$iscategoryfile && $file && !$file->is_directory()) {
             if (!local_page_user_can_serve_pagecontent_file((int) $context->id, $filepath, $filename)) {
                 return false;
             }
@@ -425,7 +507,7 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
                     $context->id,
                     'local_page',
                     'pagecontent',
-                    0,
+                    $itemid,
                     $filepath,
                     $filename
                 )->out(false),
@@ -447,6 +529,17 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
          */
         $ogimagepage = $DB->get_record('local_page', ['id' => (int) $itemid]);
         if (!$ogimagepage || !local_page_ogimage_is_servable($ogimagepage)) {
+            return false;
+        }
+
+        /*
+         * ...and it has to be a page of THIS context. Page ids are unique across the whole table,
+         * so the itemid alone would let one context hand out another's image whenever a file
+         * happened to sit under that id — a category context serving a site-wide page's image, or
+         * the reverse. The comparison goes through scope::context() because a system page stores 0
+         * in the column rather than the system context id.
+         */
+        if ((int) \local_page\local\scope::context($ogimagepage)->id !== (int) $context->id) {
             return false;
         }
 

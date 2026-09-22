@@ -55,6 +55,8 @@ final class local_page_generator extends component_generator_base {
         $record = (array) $record;
 
         $record += [
+            'contextid' => 0,
+            'categoryid' => null,
             'pagename' => 'Page ' . $this->pagecount,
             'menuname' => 'page-' . $this->pagecount,
             'status' => 'live',
@@ -79,5 +81,23 @@ final class local_page_generator extends component_generator_base {
         $page->id = (int) $DB->insert_record('local_page', $page);
 
         return $page;
+    }
+
+    /**
+     * Create one custom page belonging to a course category.
+     *
+     * Writes both halves of the context dimension the way the save path does: contextid is the
+     * category's CONTEXT id, which is what every lookup compares against, and categoryid is the
+     * category itself, which is what the page layout needs before it can set a context.
+     *
+     * @param int $categoryid Course category the page belongs to.
+     * @param array $record Field values overriding the defaults.
+     * @return stdClass The stored row, with its id cast to int.
+     */
+    public function create_category_page(int $categoryid, array $record = []): stdClass {
+        $record['contextid'] = (int) \core\context\coursecat::instance($categoryid)->id;
+        $record['categoryid'] = $categoryid;
+
+        return $this->create_page($record);
     }
 }

@@ -62,6 +62,10 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 #[CoversFunction('local_page_ogimage_is_servable')]
 #[CoversFunction('local_page_require_editable_page')]
 #[CoversFunction('local_page_pluginfile')]
+#[CoversFunction('local_page_pages_referencing_pagecontent_file')]
+#[CoversFunction('local_page_user_can_serve_pagecontent_file')]
+#[CoversFunction('local_page_page_in_context')]
+#[CoversFunction('local_page_save_target_context')]
 final class lib_test extends \advanced_testcase {
     /**
      * The plugin's own data generator.
@@ -79,14 +83,29 @@ final class lib_test extends \advanced_testcase {
      * @return \stdClass The user record.
      */
     private function user_holding(string $capability): \stdClass {
+        return $this->user_holding_at($capability, \context_system::instance());
+    }
+
+    /**
+     * A fresh user holding exactly one capability, at one context and nowhere else.
+     *
+     * The context matters from this stage on: a manager of one category must not be able to
+     * preview or edit another category's pages, and the only way to assert that is to grant the
+     * capability where it is meant to apply rather than site-wide.
+     *
+     * @param string $capability Capability name, e.g. local/page:managecategorypages.
+     * @param \core\context $context Context to grant and assign the role at.
+     * @return \stdClass The user record.
+     */
+    private function user_holding_at(string $capability, \core\context $context): \stdClass {
         $user = $this->getDataGenerator()->create_user();
         $roleid = $this->getDataGenerator()->create_role();
         $this->getDataGenerator()->create_role_capability(
             $roleid,
             [$capability => 'allow'],
-            \context_system::instance()
+            $context
         );
-        role_assign($roleid, $user->id, \context_system::instance()->id);
+        role_assign($roleid, $user->id, $context->id);
         accesslib_clear_all_caches_for_unit_testing();
 
         return $user;
@@ -431,15 +450,38 @@ final class lib_test extends \advanced_testcase {
      *
      * @param int $pageid Page id, which is the itemid of the ogimage area.
      * @param string $filename File name to store.
+     * @param int|null $contextid Context to store it in; the system context when omitted.
      * @return void
      */
-    private function store_ogimage(int $pageid, string $filename): void {
+    private function store_ogimage(int $pageid, string $filename, ?int $contextid = null): void {
         get_file_storage()->create_file_from_string(
             [
-                'contextid' => \context_system::instance()->id,
+                'contextid' => $contextid ?? \context_system::instance()->id,
                 'component' => 'local_page',
                 'filearea' => 'ogimage',
                 'itemid' => $pageid,
+                'filepath' => '/',
+                'filename' => $filename,
+            ],
+            'not really a png'
+        );
+    }
+
+    /**
+     * Stores one file in the pagecontent area of a context, under an item id.
+     *
+     * @param int $contextid Context to store it in.
+     * @param int $itemid Item id: 0 for the shared site-wide area, the page id for a category page.
+     * @param string $filename File name to store.
+     * @return void
+     */
+    private function store_pagecontent_file(int $contextid, int $itemid, string $filename): void {
+        get_file_storage()->create_file_from_string(
+            [
+                'contextid' => $contextid,
+                'component' => 'local_page',
+                'filearea' => 'pagecontent',
+                'itemid' => $itemid,
                 'filepath' => '/',
                 'filename' => $filename,
             ],
@@ -710,5 +752,401 @@ final class lib_test extends \advanced_testcase {
         }
 
         $this->assertSame(2, $refusals);
+    }
+    /**
+     * The editor-preview branch is evaluated at the page's OWN context.
+     *
+     * Previewing unpublished content is the editing right seen from the reader's side, so it has
+     * to follow the same split the editing capabilities do: whoever authors a category's pages
+     * previews that category's drafts, and nobody else's.
+     *
+     * @return void
+     */
+    public function test_the_preview_branch_is_evaluated_at_the_pages_own_context(): void {
+        $this->resetAfterTest();
+
+        $cata = $this->getDataGenerator()->create_category();
+        $catb = $this->getDataGenerator()->create_category();
+        $ctxa = \core\context\coursecat::instance($cata->id);
+
+        $draftina = $this->pages()->create_category_page((int) $cata->id, ['status' => 'draft']);
+        $draftinb = $this->pages()->create_category_page((int) $catb->id, ['status' => 'draft']);
+        $sitedraft = $this->pages()->create_page(['status' => 'draft']);
+
+        $this->setUser($this->user_holding_at('local/page:managecategorypages', $ctxa));
+        $this->assertTrue(\local_page_user_can_view_page($draftina), 'category manager: own category');
+        $this->assertFalse(\local_page_user_can_view_page($draftinb), 'category manager: sibling category');
+        $this->assertFalse(\local_page_user_can_view_page($sitedraft), 'category manager: site-wide page');
+
+        /*
+         * Control, and the mirror image of the three assertions above: the site-wide editor sees
+         * the site-wide draft and NOT the category one. Without this half, a predicate that simply
+         * refused every category page would pass the first three.
+         */
+        $this->setUser($this->user_holding('local/page:addpages'));
+        $this->assertTrue(\local_page_user_can_view_page($sitedraft), 'site editor: site-wide page');
+        $this->assertFalse(\local_page_user_can_view_page($draftina), 'site editor: category page');
+    }
+
+    /**
+     * The write-path re-check demands the capability of the row's own context.
+     *
+     * @return void
+     */
+    public function test_require_editable_page_is_scoped_to_the_pages_own_context(): void {
+        $this->resetAfterTest();
+
+        $cata = $this->getDataGenerator()->create_category();
+        $catb = $this->getDataGenerator()->create_category();
+        $ctxa = \core\context\coursecat::instance($cata->id);
+
+        $pagea = $this->pages()->create_category_page((int) $cata->id);
+        $pageb = $this->pages()->create_category_page((int) $catb->id);
+        $sitepage = $this->pages()->create_page();
+
+        $this->setUser($this->user_holding_at('local/page:managecategorypages', $ctxa));
+
+        // Control: the manager of category A may edit category A's page.
+        $row = \local_page_require_editable_page((int) $pagea->id);
+        $this->assertNotNull($row);
+        $this->assertSame((int) $pagea->id, (int) $row->id);
+
+        $refused = ['sibling category' => (int) $pageb->id, 'site-wide page' => (int) $sitepage->id];
+        foreach ($refused as $label => $pageid) {
+            try {
+                \local_page_require_editable_page($pageid);
+                $this->fail("{$label}: expected the call to throw");
+            } catch (\required_capability_exception $e) {
+                $this->assertInstanceOf(\required_capability_exception::class, $e, $label);
+            }
+        }
+
+        // And the site-wide editor is the mirror image: their own page yes, the category one no.
+        $this->setUser($this->user_holding('local/page:addpages'));
+        $this->assertNotNull(\local_page_require_editable_page((int) $sitepage->id));
+
+        try {
+            \local_page_require_editable_page((int) $pagea->id);
+            $this->fail('site editor: expected the call to throw for a category page');
+        } catch (\required_capability_exception $e) {
+            $this->assertInstanceOf(\required_capability_exception::class, $e);
+        }
+    }
+
+    /**
+     * For a new page the re-check reads the context it is to be created in.
+     *
+     * There is no row to derive it from yet, so this is the one case where the posted value is
+     * what is checked — which is exactly why it is checked rather than trusted.
+     *
+     * @return void
+     */
+    public function test_require_editable_page_checks_the_posted_context_for_a_new_page(): void {
+        $this->resetAfterTest();
+
+        $cata = $this->getDataGenerator()->create_category();
+        $catb = $this->getDataGenerator()->create_category();
+        $ctxa = \core\context\coursecat::instance($cata->id);
+        $ctxb = \core\context\coursecat::instance($catb->id);
+
+        $this->setUser($this->user_holding_at('local/page:managecategorypages', $ctxa));
+
+        // Control: a new page in the category this user manages is allowed.
+        $this->assertNull(\local_page_require_editable_page(0, (int) $ctxa->id));
+
+        $refused = ['sibling category' => (int) $ctxb->id, 'site-wide scope' => 0];
+        foreach ($refused as $label => $contextid) {
+            try {
+                \local_page_require_editable_page(0, $contextid);
+                $this->fail("{$label}: expected the call to throw");
+            } catch (\required_capability_exception $e) {
+                $this->assertInstanceOf(\required_capability_exception::class, $e, $label);
+            }
+        }
+
+        // The site-wide editor, again in mirror image.
+        $this->setUser($this->user_holding('local/page:addpages'));
+        $this->assertNull(\local_page_require_editable_page(0, 0));
+
+        try {
+            \local_page_require_editable_page(0, (int) $ctxa->id);
+            $this->fail('site editor: expected the call to throw for a category scope');
+        } catch (\required_capability_exception $e) {
+            $this->assertInstanceOf(\required_capability_exception::class, $e);
+        }
+    }
+
+    /**
+     * A category page's embedded files are served through its own context and item id, and nowhere else.
+     *
+     * The fixture deliberately stores the SAME file name under the SAME item id in a second
+     * category's context. Nothing in the plugin writes that — a page's files only ever go to the
+     * page's own context — but the file table outlives rows, through a restore, a reinstall or a
+     * move made by hand, and it is what makes the contextid clause in the lookup load-bearing
+     * instead of incidental: without it the row is found by id alone and this context serves it.
+     *
+     * Only refusals are asserted through local_page_pluginfile(), for the reason the og:image
+     * tests give: a successful serve reaches readfile_accel(), which closes every output buffer
+     * PHPUnit has. The positive direction is held by the controls, which show the page viewable
+     * and each fixture file really present in the area the call is refusing to read from.
+     *
+     * @return void
+     */
+    public function test_the_pagecontent_file_route_is_scoped_to_the_pages_own_context(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $fs = get_file_storage();
+        $system = \context_system::instance();
+
+        $cata = $this->getDataGenerator()->create_category();
+        $catb = $this->getDataGenerator()->create_category();
+        $ctxa = \core\context\coursecat::instance($cata->id);
+        $ctxb = \core\context\coursecat::instance($catb->id);
+
+        $page = $this->pages()->create_category_page((int) $cata->id);
+        $itemid = (int) $page->id;
+
+        $this->store_pagecontent_file((int) $ctxa->id, $itemid, 'body.png');
+        $this->store_pagecontent_file((int) $ctxb->id, $itemid, 'body.png');
+
+        // Controls: the page is viewable, and both fixture files really are where they were put.
+        $this->assertTrue(\local_page_user_can_view_page($page));
+        $this->assertNotEmpty($fs->get_file($ctxa->id, 'local_page', 'pagecontent', $itemid, '/', 'body.png'));
+        $this->assertNotEmpty($fs->get_file($ctxb->id, 'local_page', 'pagecontent', $itemid, '/', 'body.png'));
+
+        // A context the page does not belong to may not serve it, file or no file.
+        $this->assertFalse(
+            \local_page_pluginfile(null, null, $ctxb, 'pagecontent', [$itemid, 'body.png'], false, ['dontdie' => true]),
+            'sibling category context'
+        );
+
+        // Nor may the site-wide area, where a category page's files never are.
+        $this->assertFalse(
+            \local_page_pluginfile(null, null, $system, 'pagecontent', [0, 'body.png'], false, ['dontdie' => true]),
+            'system context, legacy item id'
+        );
+
+        // An item id naming no page of this context is refused before the file store is consulted.
+        $this->assertFalse(
+            \local_page_pluginfile(null, null, $ctxa, 'pagecontent', [$itemid + 100000, 'body.png'], false, ['dontdie' => true]),
+            'unknown item id'
+        );
+
+        // And once the page is soft-deleted its own context stops serving it too.
+        $DB->set_field('local_page', 'deleted', 1, ['id' => $itemid]);
+        $this->assertFalse(
+            \local_page_pluginfile(null, null, $ctxa, 'pagecontent', [$itemid, 'body.png'], false, ['dontdie' => true]),
+            'own context, page deleted'
+        );
+    }
+
+    /**
+     * A page of another context can never authorise a file of the site-wide area.
+     *
+     * The site-wide pagecontent area is shared: every page there writes under item id 0, so who
+     * owns a file can only be read out of the page content that names it. That search IS the
+     * authorisation decision, and it has to stay inside one context, because the pages of a
+     * category are authored by whoever holds local/page:managecategorypages there — which is not
+     * a power over the site's own files. Without the context clause such an author pastes a
+     * reference to a site-wide file into their own page and the file follows, whatever state the
+     * page it really belongs to is in.
+     *
+     * The second half is the point of the test: the site-wide page holding the file is a DRAFT the
+     * category manager may not read, while their own page naming the same file is one they may.
+     * Both halves carry a control, because a search that had simply stopped matching anything at
+     * all would pass every refusal here just as well as the clause does.
+     *
+     * @return void
+     */
+    public function test_a_page_of_another_context_cannot_authorise_a_site_wide_file(): void {
+        $this->resetAfterTest();
+
+        $fs = get_file_storage();
+        $system = \context_system::instance();
+        $category = $this->getDataGenerator()->create_category();
+        $categorycontext = \core\context\coursecat::instance($category->id);
+
+        $reference = '<p><img src="@@PLUGINFILE@@/secret.png"></p>';
+
+        $this->store_pagecontent_file((int) $system->id, 0, 'secret.png');
+        $categorypage = $this->pages()->create_category_page((int) $category->id, ['pagecontent' => $reference]);
+
+        $manager = $this->user_holding_at('local/page:managecategorypages', $categorycontext);
+        $this->setUser($manager);
+
+        // Controls: the file really is in the area being asked for, and the reference really is stored.
+        $this->assertNotEmpty($fs->get_file($system->id, 'local_page', 'pagecontent', 0, '/', 'secret.png'));
+        $this->assertStringContainsString('secret.png', (string) $categorypage->pagecontent);
+        $this->assertTrue(\local_page_user_can_view_page($categorypage), 'the manager may read their own page');
+
+        // With no site-wide page naming the file, nothing in that area authorises it.
+        $this->assertSame([], \local_page_pages_referencing_pagecontent_file((int) $system->id, '/', 'secret.png'));
+        $this->assertFalse(\local_page_user_can_serve_pagecontent_file((int) $system->id, '/', 'secret.png'));
+        $this->assertFalse(
+            \local_page_pluginfile(null, null, $system, 'pagecontent', [0, 'secret.png'], false, ['dontdie' => true]),
+            'a category page may not authorise a site-wide file'
+        );
+
+        // Now the page the file belongs to exists, and it is a draft this manager may not read.
+        $sitepage = $this->pages()->create_page(['pagecontent' => $reference, 'status' => 'draft']);
+        $this->assertFalse(\local_page_user_can_view_page($sitepage), 'the draft is not readable by the manager');
+
+        $matches = \local_page_pages_referencing_pagecontent_file((int) $system->id, '/', 'secret.png');
+        $this->assertCount(1, $matches, 'only rows of the context asked for are searched');
+        $this->assertSame((int) $sitepage->id, (int) $matches[0]->id);
+
+        $this->assertFalse(\local_page_user_can_serve_pagecontent_file((int) $system->id, '/', 'secret.png'));
+        $this->assertFalse(
+            \local_page_pluginfile(null, null, $system, 'pagecontent', [0, 'secret.png'], false, ['dontdie' => true]),
+            'the draft that owns the file decides, not the category page that names it'
+        );
+
+        /*
+         * Control: the search itself still finds and authorises the file. An administrator may
+         * read the draft, so the same call answers true — which is how the refusals above are
+         * known to be the context clause and the draft gate, and not a needle that stopped
+         * matching.
+         */
+        $this->setAdminUser();
+        $this->assertTrue(\local_page_user_can_serve_pagecontent_file((int) $system->id, '/', 'secret.png'));
+    }
+
+    /**
+     * An og:image is served only through the context of the page the item id names.
+     *
+     * Page ids are unique across the whole table, so the item id alone says nothing about which
+     * context may hand the file out. Both directions are asserted, and both fixtures put a real
+     * file in the area being asked — otherwise the refusal would only be a missing file.
+     *
+     * @return void
+     */
+    public function test_the_ogimage_file_route_refuses_a_row_from_another_context(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $fs = get_file_storage();
+        $system = \context_system::instance();
+
+        $category = $this->getDataGenerator()->create_category();
+        $categorycontext = \core\context\coursecat::instance($category->id);
+
+        $sitepage = $this->pages()->create_page();
+        $categorypage = $this->pages()->create_category_page((int) $category->id);
+
+        // Each page's image, deliberately stored in the OTHER page's context.
+        $this->store_ogimage((int) $sitepage->id, 'og.png', (int) $categorycontext->id);
+        $this->store_ogimage((int) $categorypage->id, 'og.png', (int) $system->id);
+
+        // Controls: both rows are published, and both fixture files are in the areas being asked.
+        $this->assertTrue(\local_page_ogimage_is_servable($sitepage));
+        $this->assertTrue(\local_page_ogimage_is_servable($categorypage));
+        $this->assertNotEmpty(
+            $fs->get_file($categorycontext->id, 'local_page', 'ogimage', (int) $sitepage->id, '/', 'og.png')
+        );
+        $this->assertNotEmpty(
+            $fs->get_file($system->id, 'local_page', 'ogimage', (int) $categorypage->id, '/', 'og.png')
+        );
+
+        $this->assertFalse(
+            \local_page_pluginfile(
+                null,
+                null,
+                $categorycontext,
+                'ogimage',
+                [(int) $sitepage->id, 'og.png'],
+                false,
+                ['dontdie' => true]
+            ),
+            'a category context may not serve a site-wide page image'
+        );
+
+        $this->assertFalse(
+            \local_page_pluginfile(
+                null,
+                null,
+                $system,
+                'ogimage',
+                [(int) $categorypage->id, 'og.png'],
+                false,
+                ['dontdie' => true]
+            ),
+            'the system context may not serve a category page image'
+        );
+    }
+
+    /**
+     * A row belongs to one context, compared on the stored convention.
+     *
+     * This is the guard the listing screen's delete action applies. pages.php is a script, so the
+     * comparison lives here where a test can reach it — an unheld guard is the one that quietly
+     * stops working.
+     *
+     * @return void
+     */
+    public function test_page_in_context_compares_the_stored_convention(): void {
+        $this->resetAfterTest();
+
+        $category = $this->getDataGenerator()->create_category();
+        $categorycontext = \core\context\coursecat::instance($category->id);
+        $system = \context_system::instance();
+
+        $sitepage = $this->pages()->create_page();
+        $categorypage = $this->pages()->create_category_page((int) $category->id);
+
+        $this->assertTrue(\local_page_page_in_context($sitepage, $system));
+        $this->assertTrue(\local_page_page_in_context($categorypage, $categorycontext));
+
+        // Neither belongs to the other's context, which is what the delete action has to know.
+        $this->assertFalse(\local_page_page_in_context($sitepage, $categorycontext));
+        $this->assertFalse(\local_page_page_in_context($categorypage, $system));
+
+        // A row written before contexts existed carries no column at all and is a system page.
+        $legacy = clone $sitepage;
+        unset($legacy->contextid);
+        $this->assertTrue(\local_page_page_in_context($legacy, $system));
+        $this->assertFalse(\local_page_page_in_context($legacy, $categorycontext));
+    }
+
+    /**
+     * A posted context never moves a page that already exists.
+     *
+     * The hidden field travels through the browser. Honouring it on an existing row would let a
+     * page be moved into a context whose capability was never checked when the form was rendered
+     * — and out of the reach of the one that was.
+     *
+     * @return void
+     */
+    public function test_a_posted_context_never_moves_an_existing_page(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $category = $this->getDataGenerator()->create_category();
+        $categorycontext = \core\context\coursecat::instance($category->id);
+        $system = \context_system::instance();
+
+        $sitepage = $this->pages()->create_page();
+        $categorypage = $this->pages()->create_category_page((int) $category->id);
+
+        // An existing row keeps its own context whatever the form posted.
+        $this->assertSame(
+            (int) $system->id,
+            (int) \local_page_save_target_context($sitepage, (int) $categorycontext->id)->id,
+            'a site-wide page posted with a category context'
+        );
+        $this->assertSame(
+            (int) $categorycontext->id,
+            (int) \local_page_save_target_context($categorypage, 0)->id,
+            'a category page posted with the site-wide scope'
+        );
+
+        /*
+         * Control: with no row — a new page — the posted value IS what decides, so the two
+         * assertions above are the row winning and not the argument being ignored altogether.
+         */
+        $this->assertSame((int) $categorycontext->id, (int) \local_page_save_target_context(null, (int) $categorycontext->id)->id);
+        $this->assertSame((int) $system->id, (int) \local_page_save_target_context(null, 0)->id);
     }
 }

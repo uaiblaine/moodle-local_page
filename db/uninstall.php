@@ -26,12 +26,37 @@
 /**
  * Cleans up file areas when this plugin is removed.
  *
+ * A page's files live in the page's own context, so there is no single area to empty: every
+ * context named by a row has to be visited, plus the system context itself — which is where the
+ * legacy rows keep their files and where the column's 0 resolves to, and which must be cleaned
+ * even when the table holds no rows at all.
+ *
  * @return bool
  */
 function xmldb_local_page_uninstall() {
+    global $DB;
+
     $fs = get_file_storage();
-    $context = context_system::instance();
-    $fs->delete_area_files($context->id, 'local_page', 'pagecontent');
-    $fs->delete_area_files($context->id, 'local_page', 'ogimage');
+    $systemcontextid = (int) context_system::instance()->id;
+
+    $contextids = [$systemcontextid => $systemcontextid];
+
+    $dbman = $DB->get_manager();
+    $table = new xmldb_table('local_page');
+    $field = new xmldb_field('contextid');
+    if ($dbman->table_exists($table) && $dbman->field_exists($table, $field)) {
+        // A plugin uninstalled before this column was added has nothing else to visit.
+        $stored = $DB->get_fieldset_sql('SELECT DISTINCT contextid FROM {local_page}');
+        foreach ($stored as $contextid) {
+            $contextid = (int) $contextid === 0 ? $systemcontextid : (int) $contextid;
+            $contextids[$contextid] = $contextid;
+        }
+    }
+
+    foreach ($contextids as $contextid) {
+        $fs->delete_area_files($contextid, 'local_page', 'pagecontent');
+        $fs->delete_area_files($contextid, 'local_page', 'ogimage');
+    }
+
     return true;
 }

@@ -47,15 +47,40 @@ class pages_edit_product_form extends moodleform {
     public $callingpage;
 
     /**
+     * @var \core\context The context this page belongs to; the system context for a site-wide page.
+     */
+    protected $pagecontext;
+
+    /**
      * Constructor for the pages_edit_product_form class.
      *
+     * The context has to be known before parent::__construct() runs, because that is what calls
+     * definition(), and definition() builds the editor and the file manager against it.
+     *
      * @param mixed $page The page data to be edited.
+     * @param \core\context|null $context The context the page belongs to; system when omitted.
      */
-    public function __construct($page) {
+    public function __construct($page, ?\core\context $context = null) {
         if ($page) {
             $this->callingpage = $page->id;
         }
+        $this->pagecontext = $context ?? context_system::instance();
         parent::__construct(); // Call the parent constructor.
+    }
+
+    /**
+     * The itemid this page's embedded files are stored under.
+     *
+     * A site-wide page shares one area at itemid 0, which is what every stored URL of every page
+     * written before this stage names. A category page uses its own id, so that the file route can
+     * authorise a file from the row it belongs to. A category page that has not been saved yet has
+     * no id: its files are moved into place right after the insert (see renderer::save_page()).
+     *
+     * @param int $pageid Page id, or 0 for a page that does not exist yet.
+     * @return int
+     */
+    protected function pagecontent_itemid(int $pageid): int {
+        return $this->pagecontext->contextlevel == CONTEXT_COURSECAT ? $pageid : 0;
     }
 
     /**
@@ -65,7 +90,7 @@ class pages_edit_product_form extends moodleform {
      * @return mixed The result of the parent set_data method.
      */
     public function set_data($defaults) {
-        $context = context_system::instance(); // Get the system context.
+        $context = $this->pagecontext; // The context this page belongs to.
         $draftideditor = file_get_submitted_draft_itemid('pagecontent'); // Get the draft item ID for the editor.
 
         // Prepare the draft area for the page content.
@@ -74,7 +99,7 @@ class pages_edit_product_form extends moodleform {
             $context->id,
             'local_page',
             'pagecontent',
-            0,
+            $this->pagecontent_itemid((int) ($defaults->id ?? 0)),
             ['subdirs' => true],
             $defaults->pagecontent['text']
         );
@@ -223,7 +248,7 @@ class pages_edit_product_form extends moodleform {
         $mform->addElement('header', 'htmlbody', get_string('page', 'moodle'));
 
         // Editor for page content.
-        $context = context_system::instance(); // Get the system context.
+        $context = $this->pagecontext; // The context this page belongs to.
         $editoroptions = ['maxfiles' => EDITOR_UNLIMITED_FILES, 'noclean' => true, 'context' => $context];
 
         $mform->addElement(
@@ -294,6 +319,15 @@ class pages_edit_product_form extends moodleform {
         // Hidden field for page ID.
         $mform->addElement('hidden', 'id', null);
         $mform->setType('id', PARAM_INT); // Set the type for the ID field.
+
+        /*
+         * Hidden transport for the context a NEW page is being created in, carrying the stored
+         * convention where 0 means the system context. It is re-checked on the way back in by
+         * local_page_require_editable_page(), and for a page that already exists it is discarded
+         * in favour of the stored row's context — a posted value may not move a page.
+         */
+        $mform->addElement('hidden', 'contextid', \local_page\local\scope::stored_contextid($this->pagecontext));
+        $mform->setType('contextid', PARAM_INT);
     }
 
     /**
@@ -306,6 +340,10 @@ class pages_edit_product_form extends moodleform {
      * The access level is parsed exactly the way local_page_user_can_view_page() parses it, so that
      * what is refused here is what would have been evaluated there. The read side is deliberately
      * left alone: it must keep answering for rows saved before this form existed.
+     *
+     * The friendly URL is refused on two counts: a name Moodle itself answers on, and a name
+     * another live page of the same context already holds. Only the second one is scoped — see
+     * \local_page\local\slug::is_reserved() for why stored rows are never renamed to match.
      *
      * @param array $data Submitted values, "fieldname" => value
      * @param array $files Uploaded files, unused here
@@ -352,9 +390,16 @@ class pages_edit_product_form extends moodleform {
             }
         }
 
-        // Compared lower-cased and trimmed because that is the form the renderer stores.
+        /*
+         * Compared lower-cased and trimmed because that is the form the renderer stores. The
+         * context decides both refusals: a slug is reserved site-wide, but it is only "taken"
+         * within the scope that owns it, so two categories may each have a "contato".
+         */
         $menuname = \core_text::strtolower(trim((string) ($data['menuname'] ?? '')));
-        if ($menuname !== '' && \local_page\local\slug::is_taken($menuname, (int) ($data['id'] ?? 0))) {
+        $contextid = (int) ($data['contextid'] ?? 0);
+        if ($menuname !== '' && \local_page\local\slug::is_reserved($menuname)) {
+            $errors['menuname'] = get_string('menuname_reserved', 'local_page');
+        } else if ($menuname !== '' && \local_page\local\slug::is_taken($menuname, (int) ($data['id'] ?? 0), $contextid)) {
             $errors['menuname'] = get_string('menuname_taken', 'local_page');
         }
 

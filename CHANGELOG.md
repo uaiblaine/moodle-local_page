@@ -1,5 +1,68 @@
 # CHANGELOG
 
+## [1.0.10+uai.3] - 2026-09-22
+
+The data model learns where a page lives. Nothing an author can see changes yet: no screen offers
+to create a page in a category, and every existing page keeps its address, its files and its
+permissions exactly as they were.
+
+### Added
+- **Pages have a context.** `{local_page}` gains `contextid` and `categoryid`, plus a
+  `(contextid, menuname)` index, and a new `\local_page\local\scope` is the only code that reads
+  them. **A stored `contextid` of 0 means the system context**, resolved in code because a context
+  id is a row id assigned at install time and no XMLDB default can name one — which is what makes
+  the change additive: every row written before this release reads as a site-wide page and the
+  upgrade migrates nothing.
+- **Two capabilities, declared now.** `local/page:managecategorypages` authors the pages of one
+  course category; `local/page:publishcategorypages` will gate putting one in front of visitors who
+  are not logged in. Both are `CONTEXT_COURSECAT`, `RISK_SPAM`, manager by archetype, and both are
+  deliberately **without `clonepermissionsfrom`**: no upgrade may back-fill a category right from
+  `moodle/category:manage` or from `local/page:addpages`. The publishing one is declared and not yet
+  read — the gate that consults it is the next release — so that the capability, its strings and its
+  archetype exist before anything starts refusing on them.
+- **Reserved friendly URLs.** `slug::is_reserved()` refuses the names Moodle answers on itself:
+  every top-level entry of the 5.2 webroot, the router's own segments (`p`, `s`, `esm`, `check`,
+  `templates`, `api`), and anything shaped like a frankenstyle component, because a plugin
+  installed tomorrow may claim its own name. A slug already stored is never renamed — see the note
+  below.
+- Tests for the whole context dimension (`tests/local/scope_test.php`, and additions to the lib,
+  slug and form tests), including an assertion that every capability declared in `db/access.php`
+  has its language string, and seven more entries in `mutations/gates.conf`.
+
+### Changed
+- **Friendly URLs are unique per context, not per site.** Two categories may each own a page called
+  `contato`, and neither collides with a site-wide page of that name. `slug::is_taken()` takes the
+  scope, `slug::normalise_all()` groups duplicates by it, and `custompage::load_by_menuname()` takes
+  a context to look in (defaulting to the site-wide scope, which is what the site-root viewer means).
+- **Nine places that said "the system context" now ask the row.** The viewer predicate, the write-path
+  re-check, the `pluginfile` callback, the save path, the edit form, `edit.php`, `pages.php`,
+  `index.php` and `custompage` all resolve the context through `scope`, so the site configuration
+  override, the `accesslevel` entries and the editor-preview branch are evaluated where the page
+  actually lives. A manager of one category previews that category's drafts and nobody else's.
+- **A category page keeps its embedded files under its own id**, in its own context, which lets the
+  file route authorise a file with one row lookup — the row must be in the requested context and not
+  deleted — instead of the `LIKE` search the shared site-wide area needs. The site-wide area is
+  untouched at item id 0, because every URL stored in every existing page names that item id, and
+  that `LIKE` search is now scoped to the context the file was asked for: a page of another context
+  naming a site-wide file does not make it servable, which matters from this release on because a
+  category's pages are written by people who hold no right over the site's own files. The
+  `ogimage` route additionally refuses a row whose own context is not the one being asked, since page
+  ids are unique table-wide and the item id alone says nothing about who may serve the file.
+- The listing screen, the editor and the delete action are per context: `pages.php` takes a
+  `contextid`, checks the capability of that context and refuses to delete a row belonging to
+  another one, and `edit.php` takes a `category` for a new page and reads the row's own context for
+  an existing one.
+- `db/uninstall.php` empties both file areas in every context named by a row, not only in the system
+  context.
+
+### Notes
+- **No user interface creates a category page yet.** This release is the data model and the
+  permissions; the editor entry point, the publishing gate, the anonymous viewer and the addresses
+  that reach a category page are the releases that follow it.
+- `slug::normalise_all()` does **not** rename a stored slug that `is_reserved()` would now refuse. A
+  rename at upgrade time breaks an address that has been published and working; the form refuses new
+  ones instead, where nothing is lost.
+
 ## [1.0.10+uai.2] - 2026-09-22
 
 Security prerequisites. Each fix is self-contained and commented as such, so it can be offered

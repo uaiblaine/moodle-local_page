@@ -63,9 +63,10 @@ final class edit_form_test extends \advanced_testcase {
      * needs a context and a url before the form is constructed — a test process is not a request
      * and neither is set for free.
      *
+     * @param \core\context|null $context Context the page being edited belongs to; system when omitted.
      * @return \pages_edit_product_form
      */
-    private function form(): \pages_edit_product_form {
+    private function form(?\core\context $context = null): \pages_edit_product_form {
         global $PAGE;
 
         $PAGE->set_context(\context_system::instance());
@@ -73,19 +74,23 @@ final class edit_form_test extends \advanced_testcase {
             $PAGE->set_url(new \moodle_url('/local/page/edit.php'));
         }
 
-        return new \pages_edit_product_form(false);
+        return new \pages_edit_product_form(false, $context);
     }
 
     /**
      * Runs validation() over one set of submitted values.
      *
-     * @param array $data Submitted values; the three fields validation() reads default to empty.
+     * The contextid defaults to 0, the stored convention for the site-wide scope, which is what an
+     * editor working on a site page posts.
+     *
+     * @param array $data Submitted values; the fields validation() reads default to empty.
+     * @param \core\context|null $context Context the form was built for; system when omitted.
      * @return array Errors keyed by element name.
      */
-    private function errors(array $data): array {
-        $data += ['accesslevel' => '', 'menuname' => '', 'id' => 0];
+    private function errors(array $data, ?\core\context $context = null): array {
+        $data += ['accesslevel' => '', 'menuname' => '', 'id' => 0, 'contextid' => 0];
 
-        return $this->form()->validation($data, []);
+        return $this->form($context)->validation($data, []);
     }
 
     /**
@@ -252,6 +257,63 @@ final class edit_form_test extends \advanced_testcase {
         ]);
 
         $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => 'about']));
+    }
+
+    /**
+     * A friendly URL Moodle itself answers on is refused.
+     *
+     * The cost of accepting one is paid later and somewhere else: depending on how the site's
+     * rewrite rules are ordered, either the page never answers or it shadows part of Moodle, and
+     * neither is visible from this form.
+     *
+     * @return void
+     */
+    public function test_a_reserved_slug_is_refused(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        foreach (['login', 'course', 'r', 'local_foo'] as $reserved) {
+            $errors = $this->errors(['menuname' => $reserved]);
+            $this->assertArrayHasKey('menuname', $errors, $reserved);
+            $this->assertSame(get_string('menuname_reserved', 'local_page'), $errors['menuname'], $reserved);
+        }
+
+        // Control: an ordinary slug nobody holds is accepted, so the refusals above are the rule.
+        $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => 'about-us']));
+    }
+
+    /**
+     * The same friendly URL is accepted in another category, and still refused in its own.
+     *
+     * @return void
+     */
+    public function test_a_slug_held_in_another_category_is_accepted(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $cata = $this->getDataGenerator()->create_category();
+        $catb = $this->getDataGenerator()->create_category();
+        $ctxa = \core\context\coursecat::instance($cata->id);
+        $ctxb = \core\context\coursecat::instance($catb->id);
+
+        $this->pages()->create_category_page((int) $cata->id, ['menuname' => 'contato']);
+
+        // The other category may have a page of the same name.
+        $this->assertArrayNotHasKey(
+            'menuname',
+            $this->errors(['menuname' => 'contato', 'contextid' => (int) $ctxb->id], $ctxb)
+        );
+
+        // So may the site as a whole.
+        $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => 'contato']));
+
+        /*
+         * Control: inside the category that already holds it the slug is still refused, so the two
+         * acceptances above are the scoping and not the uniqueness check having been switched off.
+         */
+        $errors = $this->errors(['menuname' => 'contato', 'contextid' => (int) $ctxa->id], $ctxa);
+        $this->assertArrayHasKey('menuname', $errors);
+        $this->assertSame(get_string('menuname_taken', 'local_page'), $errors['menuname']);
     }
 
     /**

@@ -132,28 +132,8 @@ class custompage {
             $data->contenthtml = '';
         }
 
-        if (!$editor && !empty($data->pagecontent)) {
-            $context = \context_system::instance();
-            $data->pagecontent = \file_rewrite_pluginfile_urls(
-                $data->pagecontent,
-                'pluginfile.php',
-                $context->id,
-                'local_page',
-                'pagecontent',
-                0
-            );
-        }
-
-        if (!$editor && isset($data->contenthtml) && (string) $data->contenthtml !== '') {
-            $context = \context_system::instance();
-            $data->contenthtml = \file_rewrite_pluginfile_urls(
-                $data->contenthtml,
-                'pluginfile.php',
-                $context->id,
-                'local_page',
-                'pagecontent',
-                0
-            );
+        if (!$editor) {
+            self::rewrite_file_urls($data);
         }
 
         return new custompage($data);
@@ -162,11 +142,17 @@ class custompage {
     /**
      * Loads a page from the database by menuname.
      *
+     * Friendly URLs are unique per context, not site-wide, so a lookup has to say which context it
+     * means: the site-wide scope is 0, a category's is its context id (see
+     * {@see \local_page\local\scope}). The default of 0 is what the site-root viewer wants, and
+     * it is also what every caller written before contexts existed meant.
+     *
      * @param string $menuname The menuname to load.
      * @param bool $editor Whether the page is being loaded for editing.
+     * @param int $contextid Stored contextid to look in; 0 is the system scope.
      * @return custompage The loaded page object.
      */
-    public static function load_by_menuname($menuname, $editor = false): custompage {
+    public static function load_by_menuname($menuname, $editor = false, int $contextid = 0): custompage {
         global $DB, $CFG;
         require_once($CFG->libdir . '/formslib.php');
         require_once(dirname(__FILE__) . '/../lib.php');
@@ -176,9 +162,9 @@ class custompage {
         if (!empty($menuname)) {
             $data = $DB->get_record_sql(
                 "SELECT * FROM {local_page}
-                 WHERE menuname = ? AND deleted = 0
+                 WHERE menuname = :menuname AND contextid = :contextid AND deleted = 0
                  ORDER BY id DESC",
-                [$menuname],
+                ['menuname' => $menuname, 'contextid' => $contextid],
                 IGNORE_MULTIPLE
             );
         }
@@ -199,30 +185,49 @@ class custompage {
             $data->contenthtml = '';
         }
 
-        if (!$editor && !empty($data->pagecontent)) {
-            $context = \context_system::instance();
+        if (!$editor) {
+            self::rewrite_file_urls($data);
+        }
+
+        return new custompage($data);
+    }
+
+    /**
+     * Rewrites the @@PLUGINFILE@@ placeholders of a loaded row into real pluginfile URLs.
+     *
+     * The area a page's embedded files live in is decided by the row itself: a site-wide page
+     * shares one area under itemid 0, which is what every URL stored before contexts existed
+     * names, while a category page has an area of its own under its id. Both halves were written
+     * out twice, once per loader, with the system context and itemid 0 hard-coded; they are one
+     * method now so the two loaders cannot come to disagree about where a file is.
+     *
+     * @param \stdClass $data Row being prepared for the viewer; modified in place.
+     * @return void
+     */
+    private static function rewrite_file_urls(\stdClass $data): void {
+        $context = \local_page\local\scope::context($data);
+        $itemid = \local_page\local\scope::is_category($data) ? (int) $data->id : 0;
+
+        if (!empty($data->pagecontent)) {
             $data->pagecontent = \file_rewrite_pluginfile_urls(
                 $data->pagecontent,
                 'pluginfile.php',
                 $context->id,
                 'local_page',
                 'pagecontent',
-                0
+                $itemid
             );
         }
 
-        if (!$editor && isset($data->contenthtml) && (string) $data->contenthtml !== '') {
-            $context = \context_system::instance();
+        if (isset($data->contenthtml) && (string) $data->contenthtml !== '') {
             $data->contenthtml = \file_rewrite_pluginfile_urls(
                 $data->contenthtml,
                 'pluginfile.php',
                 $context->id,
                 'local_page',
                 'pagecontent',
-                0
+                $itemid
             );
         }
-
-        return new custompage($data);
     }
 }

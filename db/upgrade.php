@@ -70,5 +70,32 @@ function xmldb_local_page_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026092201, 'local', 'page');
     }
 
+    if ($oldversion < 2026092202) {
+        // A page now records the context it belongs to. The column defaults to 0, which means the
+        // system context: context ids are row ids assigned at install time, so no XMLDB default
+        // can name one. Every existing row therefore reads as a site-wide page with nothing to
+        // migrate, and categoryid stays NULL until a page is authored in a category.
+
+        $table = new xmldb_table('local_page');
+
+        $field = new xmldb_field('contextid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'id');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('categoryid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'contextid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Friendly URLs are unique per context from this stage on, so the lookup is by both.
+        $index = new xmldb_index('contextmenuname', XMLDB_INDEX_NOTUNIQUE, ['contextid', 'menuname']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        upgrade_plugin_savepoint(true, 2026092202, 'local', 'page');
+    }
+
     return true;
 }

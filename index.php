@@ -37,17 +37,6 @@ require_once($CFG->dirroot . '/local/page/lib.php'); // Include the library file
 $pageid = optional_param('id', 0, PARAM_INT);
 $menuname = optional_param('menuname', '', PARAM_ALPHANUMEXT);
 
-// Set up the page context and URL for the current page.
-$context = context_system::instance(); // Get the system context.
-$PAGE->set_context($context); // Set the context for the page.
-
-// Set the URL based on whether we are using menuname or ID.
-if (!empty($menuname)) {
-    $PAGE->set_url(new moodle_url('/' . $menuname)); // Define the URL for the page using menuname.
-} else {
-    $PAGE->set_url(new moodle_url('/local/page/index.php', ['id' => $pageid])); // Define the URL for the page using ID.
-}
-
 // Load the custom page object using the page ID or menuname.
 if (!empty($menuname)) {
     // Load by menuname.
@@ -55,6 +44,29 @@ if (!empty($menuname)) {
 } else {
     // Load by ID.
     $custompage = \local_page\custompage::load($pageid);
+}
+
+/*
+ * Set up the page context, which the loaded row decides: a page belonging to a course category is
+ * rendered in that category's context, and everything below — the file URLs and the capability
+ * checks — reads it from here. A row that was not found resolves to the system context, which is
+ * what the "no access" rendering needs.
+ *
+ * The context has to be set before any other set_*() call for a category page, because
+ * set_category_by_id() sets the course as well and throws once one is set (pagelib.php:1478-1490).
+ */
+$context = \local_page\local\scope::context($custompage);
+if ($context->contextlevel == CONTEXT_COURSECAT) {
+    $PAGE->set_category_by_id((int) $context->instanceid);
+} else {
+    $PAGE->set_context($context); // Set the context for the page.
+}
+
+// Set the URL based on whether we are using menuname or ID.
+if (!empty($menuname)) {
+    $PAGE->set_url(new moodle_url('/' . $menuname)); // Define the URL for the page using menuname.
+} else {
+    $PAGE->set_url(new moodle_url('/local/page/index.php', ['id' => $pageid])); // Define the URL for the page using ID.
 }
 
 // Check if the custom page has specific access level requirements.
@@ -142,7 +154,7 @@ if (!$canview) {
         $PAGE->set_heading($custompage->pagename);
     }
 
-    if (has_capability('local/page:addpages', $context)) {
+    if (has_capability(\local_page\local\scope::capability($context), $context)) {
         $PAGE->add_body_class('local-page-status-' . $statusbadge);
     }
 
@@ -168,7 +180,7 @@ echo $renderer->showpage($custompage); // Render and display the custom page con
 
 // Check if the user has the capability to add pages or is a site admin.
 $editpageid = (int) $custompage->id;
-if ($editpageid > 0 && has_capability('local/page:addpages', $context)) {
+if ($editpageid > 0 && has_capability(\local_page\local\scope::capability($context), $context)) {
     $footerbtn = html_writer::div(
         html_writer::link(
             new moodle_url('/local/page/edit.php', ['id' => $editpageid]),

@@ -59,6 +59,16 @@ final class slug_test extends \advanced_testcase {
     }
 
     /**
+     * The context id of a course category, as the column stores it.
+     *
+     * @param int $categoryid Course category id.
+     * @return int
+     */
+    private function category_scope(int $categoryid): int {
+        return (int) \core\context\coursecat::instance($categoryid)->id;
+    }
+
+    /**
      * A slug is taken by a live page, and free once that page has been deleted.
      *
      * @return void
@@ -121,6 +131,137 @@ final class slug_test extends \advanced_testcase {
         $successor = $this->pages()->create_page(['menuname' => 'about']);
         $this->assertTrue(slug::is_taken('about'));
         $this->assertFalse(slug::is_taken('about', (int) $successor->id));
+    }
+
+    /**
+     * A slug is only taken within the context that owns it.
+     *
+     * This is the whole point of making uniqueness per context: two faculties may each want a page
+     * called "contato", and neither of them has any business preventing the other. A site-wide
+     * page of the same name is a third, separate address.
+     *
+     * @return void
+     */
+    public function test_a_slug_is_taken_only_within_its_own_context(): void {
+        $this->resetAfterTest();
+
+        $cata = $this->getDataGenerator()->create_category();
+        $catb = $this->getDataGenerator()->create_category();
+        $scopea = $this->category_scope((int) $cata->id);
+        $scopeb = $this->category_scope((int) $catb->id);
+
+        $this->pages()->create_category_page((int) $cata->id, ['menuname' => 'contato']);
+
+        // Taken where it was written...
+        $this->assertTrue(slug::is_taken('contato', 0, $scopea));
+
+        // ...and free everywhere else, which is the assertion this stage exists for.
+        $this->assertFalse(slug::is_taken('contato', 0, $scopeb));
+        $this->assertFalse(slug::is_taken('contato'), 'the system scope is not the category scope');
+
+        // The second category may now take it, and still does not collide with the first.
+        $second = $this->pages()->create_category_page((int) $catb->id, ['menuname' => 'contato']);
+        $this->assertTrue(slug::is_taken('contato', 0, $scopeb));
+        $this->assertFalse(slug::is_taken('contato', (int) $second->id, $scopeb), 'a page keeps its own slug');
+
+        /*
+         * Control: a site-wide page called "contato" makes the SYSTEM scope answer true while both
+         * category answers stay exactly as they were. Without it, an is_taken() that simply
+         * answered false for everything would satisfy the three assertions above.
+         */
+        $this->pages()->create_page(['menuname' => 'contato']);
+        $this->assertTrue(slug::is_taken('contato'));
+        $this->assertTrue(slug::is_taken('contato', 0, $scopea));
+        $this->assertTrue(slug::is_taken('contato', 0, $scopeb));
+    }
+
+    /**
+     * normalise_all() separates duplicates inside one context and leaves the other contexts alone.
+     *
+     * @return void
+     */
+    public function test_normalise_all_separates_duplicates_within_one_context_only(): void {
+        $this->resetAfterTest();
+
+        $cata = $this->getDataGenerator()->create_category();
+        $catb = $this->getDataGenerator()->create_category();
+
+        $first = $this->pages()->create_category_page((int) $cata->id, ['menuname' => 'about']);
+        $second = $this->pages()->create_category_page((int) $cata->id, ['menuname' => 'about']);
+        $elsewhere = $this->pages()->create_category_page((int) $catb->id, ['menuname' => 'about']);
+        $sitewide = $this->pages()->create_page(['menuname' => 'about']);
+
+        // Exactly one row moves: the duplicate inside category A.
+        $this->assertSame(1, slug::normalise_all());
+
+        $this->assertSame('about', $this->stored_slug((int) $first->id));
+        $this->assertSame('about-' . (int) $second->id, $this->stored_slug((int) $second->id));
+
+        /*
+         * Controls: the pages in the other category and in the site scope share the address with
+         * the first one and are untouched, which is what "per context" means. A normalise_all()
+         * that still grouped globally would have moved both of them.
+         */
+        $this->assertSame('about', $this->stored_slug((int) $elsewhere->id));
+        $this->assertSame('about', $this->stored_slug((int) $sitewide->id));
+    }
+
+    /**
+     * Slugs Moodle answers on itself are refused, and the refusal is by exact name or by prefix.
+     *
+     * @return void
+     */
+    public function test_is_reserved_covers_core_paths_router_segments_and_plugin_names(): void {
+        $this->resetAfterTest();
+
+        // A webroot directory, a webroot script, and two router segments.
+        foreach (['course', 'login', 'pluginfile', 'r', 'p', 's', 'esm', 'admin', 'lib'] as $name) {
+            $this->assertTrue(slug::is_reserved($name), "{$name} is answered by Moodle itself");
+        }
+
+        // Anything shaped like a frankenstyle component, because a plugin may claim it tomorrow.
+        foreach (['local_foo', 'mod_quiz', 'theme_boost', 'qtype_multichoice'] as $name) {
+            $this->assertTrue(slug::is_reserved($name), "{$name} is a component name");
+        }
+
+        // Compared the way the value is stored: trimmed and lower-cased.
+        $this->assertTrue(slug::is_reserved('  LOGIN '));
+
+        /*
+         * Controls: ordinary slugs — including ones that merely start with the letters of a
+         * reserved name, or carry a plugin type without the underscore — are accepted. Without
+         * these, an is_reserved() that answered true for everything would pass the assertions
+         * above and no page could ever be saved.
+         */
+        foreach (['about-us', 'contato', 'courses', 'logins', 'local', 'localfoo', 'my-blog'] as $name) {
+            $expected = $name === 'local';
+            $this->assertSame($expected, slug::is_reserved($name), $name);
+        }
+
+        // An empty slug is not reserved; the save path names it page-<id> instead.
+        $this->assertFalse(slug::is_reserved(''));
+    }
+
+    /**
+     * normalise_all() leaves a stored slug that would now be refused exactly as it is.
+     *
+     * A rename at upgrade time breaks an address that has been published and working; the form
+     * refuses new ones instead, where nothing is lost. This is a deliberate asymmetry, so it is
+     * asserted rather than left to the comment that explains it.
+     *
+     * @return void
+     */
+    public function test_normalise_all_does_not_rename_a_reserved_legacy_slug(): void {
+        $this->resetAfterTest();
+
+        $legacy = $this->pages()->create_page(['menuname' => 'login']);
+
+        // Control: the routine really ran and really does rewrite rows in this very table.
+        $this->pages()->create_page(['menuname' => 'Legal']);
+        $this->assertGreaterThan(0, slug::normalise_all());
+
+        $this->assertTrue(slug::is_reserved('login'));
+        $this->assertSame('login', $this->stored_slug((int) $legacy->id));
     }
 
     /**

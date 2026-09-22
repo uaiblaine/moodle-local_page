@@ -30,20 +30,41 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 
 // Get the page ID to delete from URL parameters.
 $deletepage = optional_param('pagedel', 0, PARAM_INT);
+// Which set of pages this screen lists: the site's, or one course category's.
+$contextid = optional_param('contextid', 0, PARAM_INT);
 
 // Set up the page context.
-$context = context_system::instance();
+if ($contextid > 0) {
+    $context = \core\context::instance_by_id($contextid, MUST_EXIST);
+    if ($context->contextlevel != CONTEXT_SYSTEM && $context->contextlevel != CONTEXT_COURSECAT) {
+        // Custom pages exist at those two levels only; anything else is a hand-edited URL.
+        throw new moodle_exception('invalidcontext');
+    }
+} else {
+    $context = context_system::instance();
+}
+$listparams = [];
+if ($context->contextlevel == CONTEXT_COURSECAT) {
+    $listparams['contextid'] = $context->id;
+}
+$listurl = new moodle_url('/local/page/pages.php', $listparams);
 
 // Set PAGE variables for the current page.
-$PAGE->set_context($context);
-$PAGE->set_url(new moodle_url('/local/page/pages.php'));
+if ($context->contextlevel == CONTEXT_COURSECAT) {
+    // Sets the course, the category and the context in one call, and throws if anything else
+    // already set one of them — so it comes before every other set_*() call (pagelib.php:1478).
+    $PAGE->set_category_by_id((int) $context->instanceid);
+} else {
+    $PAGE->set_context($context);
+}
+$PAGE->set_url($listurl);
 $PAGE->set_pagelayout('base');
 $PAGE->set_title(get_string('pagesetup_title', 'local_page'));
 $PAGE->set_heading(get_string('pagesetup_heading', 'local_page'));
 
-// Force the user to login and check capabilities for managing pages.
+// Force the user to login and check capabilities for managing pages in THIS context.
 require_login();
-require_capability('local/page:addpages', $context);
+require_capability(\local_page\local\scope::capability($context), $context);
 
 // Handle page deletion if requested.
 if ($deletepage !== 0) {
@@ -51,7 +72,12 @@ if ($deletepage !== 0) {
     // Mark the page as deleted in the database, and release the friendly URL it was holding in the
     // same write: a slug belongs to a page a visitor can reach, and a deleted page is not one.
     // A page restored by hand therefore needs a new slug.
-    if ($pagetodelete = $DB->get_record('local_page', ['id' => $deletepage], 'id, menuname')) {
+    //
+    // The row has to belong to the context this screen was authorised for: the capability was
+    // checked there, and the id travels in a link, so without the comparison a category manager
+    // could delete a site-wide page by typing its id.
+    $pagetodelete = $DB->get_record('local_page', ['id' => $deletepage], 'id, menuname, contextid');
+    if ($pagetodelete && local_page_page_in_context($pagetodelete, $context)) {
         $DB->update_record('local_page', (object) [
             'id' => (int) $pagetodelete->id,
             'deleted' => 1,
@@ -62,7 +88,7 @@ if ($deletepage !== 0) {
         ]);
     }
     // Redirect to the same page to prevent resubmission.
-    redirect(new moodle_url('/local/page/pages.php'));
+    redirect($listurl);
 }
 
 // Get the renderer for this page.
@@ -71,6 +97,6 @@ $renderer = $PAGE->get_renderer('local_page');
 // Output the page header and content.
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('custompage_title', 'local_page'));
-echo $renderer->list_pages();
+echo $renderer->list_pages($context);
 
 echo $OUTPUT->footer();

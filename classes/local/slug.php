@@ -46,6 +46,66 @@ final class slug {
     private const MAXLENGTH = 255;
 
     /**
+     * @var array Slugs Moodle itself answers on, which a page may therefore not take.
+     *
+     * Source: the top-level entries of the Moodle 5.2 webroot — every directory and every script
+     * under public/ — plus the segments the 5.1+ routing engine reserves under the site root
+     * (p, s, esm, check, templates, api). A friendly URL is served by rewriting the site root, so
+     * a page holding one of these names either never answers (the real path wins) or hides part
+     * of Moodle (the rewrite wins). Neither is something an author can debug from the form.
+     */
+    private const RESERVED = [
+        'admin', 'ai', 'analytics', 'api', 'auth', 'availability', 'backup', 'badges', 'blocks',
+        'blog', 'brokenfile', 'cache', 'calendar', 'check', 'cohort', 'comment', 'communication',
+        'competency', 'completion', 'config', 'contentbank', 'course', 'customfield', 'dataformat',
+        'draftfile', 'editmode', 'enrol', 'error', 'esm', 'favourites', 'file', 'files', 'filter',
+        'grade', 'group', 'h5p', 'help', 'help_ajax', 'index', 'install', 'iplookup', 'lang',
+        'lib', 'local', 'login', 'media', 'message', 'mnet', 'mod', 'my', 'notes', 'p', 'payment',
+        'pix', 'plagiarism', 'pluginfile', 'portfolio', 'privacy', 'question', 'r', 'rating',
+        'report', 'reportbuilder', 'repository', 'rss', 's', 'search', 'security', 'sms', 'tag',
+        'templates', 'theme', 'tokenpluginfile', 'user', 'userpix', 'version', 'webservice',
+    ];
+
+    /**
+     * @var string Slugs shaped like a frankenstyle component name, which are reserved too.
+     *
+     * A plugin installed tomorrow may register a route under its own frankenstyle name, so the
+     * list above cannot be complete by enumeration. Every current plugin type is named here
+     * instead, and a slug beginning with one of them plus an underscore is refused.
+     */
+    private const RESERVED_PREFIX_PATTERN = '/^(local|mod|block|auth|enrol|theme|report|tool|format|qtype|filter|repository'
+        . '|portfolio|availability|customfield|editor|media|antivirus|cachestore|cachelock|logstore|mlbackend|paygw'
+        . '|aiprovider|aiplacement|communication|h5plib|contentbank|dataformat|fileconverter|mnetservice|search'
+        . '|webservice|profilefield|gradingform|gradeexport|gradeimport|gradereport|qbank|qbehaviour|qformat|quizaccess'
+        . '|assignsubmission|assignfeedback|booktool|forumreport|datafield|datapreset|ltisource|ltiservice|scormreport'
+        . '|workshopform|workshopallocation|workshopeval|tiny|atto|calendartype|coursereport|smsgateway)_/';
+
+    /**
+     * Whether a slug is one Moodle answers on itself.
+     *
+     * Only the form consults this. normalise_all() deliberately does NOT rename a legacy row whose
+     * slug turns out to be reserved: that row has been answering at its address for as long as the
+     * site's rewrite rules have allowed it to, and renaming it at upgrade time would break a
+     * published URL to fix a URL that may never have been broken. New ones are refused on the way
+     * in, which is where the cost of the refusal is zero.
+     *
+     * @param string $menuname Slug to test; compared trimmed and lower-cased, as it is stored
+     * @return bool
+     */
+    public static function is_reserved(string $menuname): bool {
+        $menuname = \core_text::strtolower(trim($menuname));
+        if ($menuname === '') {
+            return false;
+        }
+
+        if (in_array($menuname, self::RESERVED, true)) {
+            return true;
+        }
+
+        return preg_match(self::RESERVED_PREFIX_PATTERN, $menuname) === 1;
+    }
+
+    /**
      * Brings every stored slug into line with the rules above, in place.
      *
      * Runs in four passes over the whole table, in this order, and is idempotent: a second call
@@ -54,18 +114,23 @@ final class slug {
      * 1. every value is trimmed and lower-cased, and truncated to the column width;
      * 2. a live row with an empty slug is given page-<id>, so every page is addressable;
      * 3. a deleted row is given the deleted_name() form, releasing the address it was holding;
-     * 4. among live rows sharing a slug the lowest id keeps it and the others gain -<id>.
+     * 4. among live rows OF ONE CONTEXT sharing a slug the lowest id keeps it and the others gain
+     *    -<id>.
      *
      * Pass 4 runs in id order and records what it has handed out as it goes, so a suffixed value
      * that happens to collide with a later row's slug pushes that row along too rather than
-     * creating a fresh duplicate.
+     * creating a fresh duplicate. It groups by contextid because uniqueness is per context from
+     * this stage on: two categories may each own a page called "contato" and neither has to move.
+     *
+     * A slug that is_reserved() would refuse is left exactly as it is, deliberately — see that
+     * method for why a rename at upgrade time is the more expensive mistake.
      *
      * @return int Number of rows whose menuname was rewritten
      */
     public static function normalise_all(): int {
         global $DB;
 
-        $rows = $DB->get_records('local_page', null, 'id ASC', 'id, menuname, deleted');
+        $rows = $DB->get_records('local_page', null, 'id ASC', 'id, menuname, deleted, contextid');
 
         // Passes 1 to 3: everything that depends on one row alone.
         $wanted = [];
@@ -82,17 +147,18 @@ final class slug {
             $wanted[$id] = $name;
         }
 
-        // Pass 4: uniqueness among the rows that are still live.
+        // Pass 4: uniqueness among the rows that are still live, within each context.
         $taken = [];
         foreach ($rows as $row) {
             if ((int) $row->deleted !== 0) {
                 continue;
             }
             $id = (int) $row->id;
-            if (isset($taken[$wanted[$id]])) {
+            $scope = (int) ($row->contextid ?? 0);
+            if (isset($taken[$scope][$wanted[$id]])) {
                 $wanted[$id] = self::suffixed($wanted[$id], $id);
             }
-            $taken[$wanted[$id]] = true;
+            $taken[$scope][$wanted[$id]] = true;
         }
 
         $changed = 0;
@@ -141,11 +207,17 @@ final class slug {
      * Deleted rows are ignored on purpose: their slug has been mangled by deleted_name() and the
      * address they used to hold is free again.
      *
+     * Uniqueness is PER CONTEXT, so the answer depends on which scope is asking: two categories
+     * may each own "contato", and neither collides with a site-wide page of that name. The
+     * parameter carries the stored convention, 0 for the system scope — see
+     * {@see \local_page\local\scope} for why the column reads that way.
+     *
      * @param string $menuname Slug to test; compared trimmed and lower-cased, as it is stored
      * @param int $exceptid Page id to exclude, so a page keeps its own slug on re-save
+     * @param int $contextid Stored contextid to test within; 0 is the system scope
      * @return bool
      */
-    public static function is_taken(string $menuname, int $exceptid = 0): bool {
+    public static function is_taken(string $menuname, int $exceptid = 0, int $contextid = 0): bool {
         global $DB;
 
         $menuname = \core_text::strtolower(trim($menuname));
@@ -153,8 +225,8 @@ final class slug {
             return false;
         }
 
-        $select = 'menuname = :menuname AND deleted = 0';
-        $params = ['menuname' => $menuname];
+        $select = 'menuname = :menuname AND deleted = 0 AND contextid = :contextid';
+        $params = ['menuname' => $menuname, 'contextid' => $contextid];
 
         if ($exceptid > 0) {
             $select .= ' AND id <> :exceptid';
