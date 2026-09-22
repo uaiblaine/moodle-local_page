@@ -33,7 +33,7 @@
                 "name": "Live Page",
                 "status": "live",
                 "cardbodyclass": "custompages-card-body rounded mb-3",
-                "statusbadge": "<span class=\"badge badge-sq bg-success\">Live</span>",
+                "statusbadge": "<span class=\"badge bg-success text-white\">Live</span>",
                 "restricted": false,
                 "editurl": "https://example.org/local/page/edit.php?id=1",
                 "pageurl": "https://example.org/local/page/?id=1",
@@ -49,7 +49,7 @@
                 "name": "Draft Page",
                 "status": "draft",
                 "cardbodyclass": "custompages-card-body rounded mb-3 custompages-card-body--draft",
-                "statusbadge": "<span class=\"badge badge-sq bg-warning\">Draft</span>",
+                "statusbadge": "<span class=\"badge bg-warning text-dark\">Draft</span>",
                 "restricted": false,
                 "editurl": "https://example.org/local/page/edit.php?id=2",
                 "pageurl": "https://example.org/local/page/?id=2",
@@ -63,7 +63,7 @@
                 "name": "Archived Page",
                 "status": "archived",
                 "cardbodyclass": "custompages-card-body rounded mb-3 custompages-card-body--archived",
-                "statusbadge": "<span class=\"badge badge-sq bg-danger\">Archived</span>",
+                "statusbadge": "<span class=\"badge bg-danger text-white\">Archived</span>",
                 "restricted": false,
                 "editurl": "https://example.org/local/page/edit.php?id=3",
                 "pageurl": "https://example.org/local/page/?id=3",
@@ -79,7 +79,7 @@
         
         {{! Live pages section }}
         {{#livepages.0}}
-            <h3 class="font-weight-medium mb-3">{{#str}}status_live, local_page{{/str}}</h3>
+            <h3 class="fw-medium mb-3">{{#str}}status_live, local_page{{/str}}</h3>
             <div class="custompages-item mb-4">
                 {{#livepages}}
                     {{> local_page/page_card}}
@@ -89,7 +89,7 @@
 
         {{! Draft pages section }}
         {{#draftpages.0}}
-            <h3 class="font-weight-medium mt-6 mb-3">{{#str}}status_draft, local_page{{/str}}</h3>
+            <h3 class="fw-medium mt-6 mb-3">{{#str}}status_draft, local_page{{/str}}</h3>
             <div class="custompages-item mb-4">
                 {{#draftpages}}
                     {{> local_page/page_card}}
@@ -99,7 +99,7 @@
 
         {{! Archived pages section }}
         {{#archivedpages.0}}
-            <h3 class="font-weight-medium mt-6 mb-3">{{#str}}status_archived, local_page{{/str}}</h3>
+            <h3 class="fw-medium mt-6 mb-3">{{#str}}status_archived, local_page{{/str}}</h3>
             <div class="custompages-item mb-4">
                 {{#archivedpages}}
                     {{> local_page/page_card}}

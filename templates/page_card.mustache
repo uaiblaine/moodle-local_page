@@ -38,7 +38,7 @@
         "id": 123,
         "name": "Sample Page",
         "status": "live",
-        "statusbadge": "<span class='badge badge-sq bg-success'>Live</span>",
+        "statusbadge": "<span class='badge bg-success text-white'>Live</span>",
         "cardbodyclass": "custompages-card-body rounded mb-3",
         "restricted": false,
         "editurl": "/local/page/edit.php?id=123",
@@ -56,11 +56,11 @@
             {{{statusbadge}}}
         </div>
         {{#restricted}}
-            <span class="badge badge-sq bg-warning">{{#str}}restricted, local_page{{/str}}</span>
+            <span class="badge bg-warning text-dark">{{#str}}restricted, local_page{{/str}}</span>
         {{/restricted}}
 
         {{! Page title }}
-        <h5 class="custompages-title font-weight-medium">{{name}}</h5>
+        <h5 class="custompages-title fw-medium">{{name}}</h5>
 
         {{! Edit button }}
         <div class="w-100 border-bottom mb-2 pb-2">

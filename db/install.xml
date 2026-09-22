@@ -1,4 +1,4 @@
-<XMLDB xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" PATH="local/page/db" VERSION="20250401" COMMENT="XMLDB file for Moodle local/page" xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
+<XMLDB xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" PATH="local/page/db" VERSION="20251008" COMMENT="XMLDB file for Moodle local/page" xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
     <TABLES>
         <TABLE NAME="local_page" COMMENT="Custom pages for the local_page plugin">
             <FIELDS>

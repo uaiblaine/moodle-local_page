@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## [1.0.10+uai.1] - 2026-09-22
+
+Fork onboarding onto the fleet standards. No behaviour change on a running site
+beyond the badge contrast and dark-mode fixes below.
+
+### Added
+- `.github/workflows/ci.yml` now calls the moodle-an-hochschulen reusable workflow with a single Moodle 5.02 job, plus the branch filter and concurrency block the fleet uses.
+- `phpcs.xml`, `.moodle-plugin-ci.yml`, `.stylelintrc.json`, `.github/PULL_REQUEST_TEMPLATE.md` and a plugin `CLAUDE.md`.
+- First PHPUnit coverage: `tests/coverage.php`, a `local_page_generator` data generator, and `tests/lib_test.php` covering `local_page_user_can_view_page()` across status, publish window, `onlyloggedin`, access levels, the `local/page:addpages` preview branch and the administrator short-circuit.
+
+### Changed
+- `$plugin->supported` is `[502, 502]` and `$plugin->requires` is Moodle 5.2; the CI job list matches.
+- Status badges pair every `bg-*` utility with a text utility (`text-white` / `text-dark`). Bootstrap 5 defaults badge text to white, which left the draft badge at 1.95:1 against the 4.5:1 AA floor.
+- The status badge string id is a literal per status instead of `get_string('status_' . $status, ...)`.
+- Dark-mode rules are keyed on `:root[data-bs-theme="dark"]`, the only dark mechanism Moodle 5.2 emits; the previous `.theme-dark` rules matched nothing. Hard-coded colours now read `--bs-*` theme tokens with a literal fallback, so a site's own palette applies.
+- Templates use live Bootstrap 5 class names: `fw-medium` replaces the undefined `font-weight-medium`, and the undefined `badge-sq` is dropped.
+- `db/install.xml` carries `VERSION="20251008"`, matching the last schema-changing savepoint.
+- `lang/en` was pruned of strings no code references, and a `lang/pt_br` pack was added in lockstep.
+
+### Removed
+- `.github/workflows/moodle-release.yml`. This fork does not publish to moodle.org — releases there stay with the upstream author — and the workflow fired on every `version.php` push.
+- The `defined('MOODLE_INTERNAL')` guard in `lib.php` and `db/uninstall.php`, and the `phpcs:ignore` that existed only to silence the resulting warning: both files declare functions and nothing else, so the guard is what the sniff objects to.
+- `.DS_Store` and `templates/.DS_Store` are untracked and ignored; development-only paths are `export-ignore`d so they stay out of the install zip.
+
 ## [1.0.10] - 2026-05-08
 
 ### Security

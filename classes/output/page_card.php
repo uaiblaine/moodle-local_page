@@ -97,14 +97,28 @@ class page_card implements renderable, templatable {
             $data->cardbodyclass .= ' custompages-card-body--archived';
         }
 
-        // Generate status badge.
+        /*
+         * Generate status badge. The string id is a literal per arm, never
+         * get_string('status_' . $status): a dynamic id is invisible to the lang
+         * tooling, so an unknown status would reach get_string() and raise a
+         * developer notice instead of simply rendering no badge.
+         *
+         * Every bg-* utility is paired with a text utility. Bootstrap 5 defaults
+         * badge text to white, which is unreadable on bg-warning (contrast 1.95
+         * against the 4.5:1 AA floor), so the pairing is not optional.
+         */
         $badgeclasses = [
-            'live' => 'badge badge-sq bg-success',
-            'draft' => 'badge badge-sq bg-warning',
-            'archived' => 'badge badge-sq bg-danger',
+            'live' => 'badge bg-success text-white',
+            'draft' => 'badge bg-warning text-dark',
+            'archived' => 'badge bg-danger text-white',
         ];
-        if (isset($badgeclasses[$this->status])) {
-            $statusstring = get_string('status_' . $this->status, 'local_page');
+        $statusstring = match ($this->status) {
+            'live' => get_string('status_live', 'local_page'),
+            'draft' => get_string('status_draft', 'local_page'),
+            'archived' => get_string('status_archived', 'local_page'),
+            default => '',
+        };
+        if ($statusstring !== '' && isset($badgeclasses[$this->status])) {
             $data->statusbadge = \html_writer::tag('span', $statusstring, ['class' => $badgeclasses[$this->status]]);
         } else {
             $data->statusbadge = '';

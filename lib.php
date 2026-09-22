@@ -26,9 +26,6 @@
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-// phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalNotNeeded -- function-only lib, no class definitions
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Whether theme_xy Simple Content Builder (overlay, snippets incl. hero) can be wired on local page edit.
  *
@@ -184,9 +181,10 @@ function local_page_pages_referencing_pagecontent_file(int $contextid, string $f
 
     $rel = trim($filepath, '/');
     $suffix = $rel === '' ? $filename : $rel . '/' . $filename;
-    $encodedparts = array_map('rawurlencode', array_values(array_filter(explode('/', $suffix), static function(string $part): bool {
+    $parts = array_filter(explode('/', $suffix), static function (string $part): bool {
         return $part !== '';
-    })));
+    });
+    $encodedparts = array_map('rawurlencode', array_values($parts));
     $encodedsuffix = implode('/', $encodedparts);
 
     $needles = [
