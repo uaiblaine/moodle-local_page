@@ -39,7 +39,23 @@ Site administrators keep the site-wide screen under *Site administration > Plugi
 Custom pages > Manage pages*, which lists the site's own pages and not any category's.
 
 A category page has no `wwwroot/<slug>` friendly URL: that address is the site-wide convention,
-answered by the web server rewrite rules below for site pages only.
+answered by the web server rewrite rules below for site pages only. Its address is
+`/local/page/index.php?category=<category id>&page=<slug>` (or `&id=<page id>`); a routed address
+will be added beside it.
+
+**Visitors.** A visitor — somebody not logged in, or the guest account — may read a category page
+only when the category is **public**, and "public" is not this plugin's decision: it is the public
+state of the optional plugin `local_unlistedcourses`, which also requires the category and every
+category above it to be visible. Without that plugin nothing is public, and every visitor asking for
+a category page is sent to the login page and brought back to the page afterwards; the site's own
+pages are served to visitors exactly as before, `forcelogin` or not. The refusal is the same whether
+the category is private, hidden or does not exist, so the address cannot be used to find out which
+categories exist; in a public category, an address naming no page of that category gets the same
+refusal, and so does a page the category holds but withholds from visitors by its own rules — a
+draft, a page for logged-in users, one outside its publish window — so the slugs that exist cannot be
+told from the ones that do not, and a reader of a page kept for logged-in users is taken to the login
+form and back to the page. The same rule governs the files a category page embeds. A logged-in user never meets it: what they may read is decided by the page's own status,
+publish window, "only logged-in users" flag and access level, in the category's context.
 
 ## Friendly URLs (`menuname`)
 

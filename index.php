@@ -36,38 +36,26 @@ require_once($CFG->dirroot . '/local/page/lib.php'); // Include the library file
 // Retrieve the ID or menuname of the page to be displayed from the URL parameters.
 $pageid = optional_param('id', 0, PARAM_INT);
 $menuname = optional_param('menuname', '', PARAM_ALPHANUMEXT);
-
-// Load the custom page object using the page ID or menuname.
-if (!empty($menuname)) {
-    // Load by menuname.
-    $custompage = \local_page\custompage::load_by_menuname($menuname);
-} else {
-    // Load by ID.
-    $custompage = \local_page\custompage::load($pageid);
-}
+$category = optional_param('category', 0, PARAM_INT);
+$slug = optional_param('page', '', PARAM_ALPHANUMEXT);
 
 /*
- * Set up the page context, which the loaded row decides: a page belonging to a course category is
- * rendered in that category's context, and everything below — the file URLs and the capability
- * checks — reads it from here. A row that was not found resolves to the system context, which is
- * what the "no access" rendering needs.
- *
- * The context has to be set before any other set_*() call for a category page, because
- * set_category_by_id() sets the course as well and throws once one is set (pagelib.php:1478-1490).
+ * Which page this is, whether the viewer may read it, and $PAGE's context and URL are decided by
+ * one request class, in one order, for every address: a visitor asking for a category page is
+ * refused before anything is looked up unless the category is public (see
+ * \local_page\local\request). This script only translates the answer.
  */
+if ($category > 0) {
+    $request = \local_page\local\request::category($category, $pageid, $slug);
+} else {
+    $request = \local_page\local\request::legacy($pageid, $menuname);
+}
+if ($request->redirect !== null) {
+    redirect($request->redirect);
+}
+$custompage = $request->page;
+$canview = $request->canview;
 $context = \local_page\local\scope::context($custompage);
-if ($context->contextlevel == CONTEXT_COURSECAT) {
-    $PAGE->set_category_by_id((int) $context->instanceid);
-} else {
-    $PAGE->set_context($context); // Set the context for the page.
-}
-
-// Set the URL based on whether we are using menuname or ID.
-if (!empty($menuname)) {
-    $PAGE->set_url(new moodle_url('/' . $menuname)); // Define the URL for the page using menuname.
-} else {
-    $PAGE->set_url(new moodle_url('/local/page/index.php', ['id' => $pageid])); // Define the URL for the page using ID.
-}
 
 // Check if the custom page has specific access level requirements.
 if (!empty($custompage->accesslevel)) {
@@ -75,8 +63,6 @@ if (!empty($custompage->accesslevel)) {
 
     // Note: Additional capability checks can be added here based on $custompage->accesslevel.
 }
-
-$canview = local_page_user_can_view_page($custompage);
 
 // Set the page layout to use.
 $PAGE->set_pagelayout('base'); // Set the page layout.
@@ -136,7 +122,9 @@ if (!$canview) {
         }
     }
 
-    if (!empty($menuname) && !empty($custompage->menuname)) {
+    if ($category > 0 && !empty($custompage->menuname)) {
+        $canonicalurl = new moodle_url('/local/page/index.php', ['category' => $category, 'page' => $custompage->menuname]);
+    } else if (!empty($menuname) && !empty($custompage->menuname)) {
         $canonicalurl = new moodle_url('/' . $custompage->menuname);
     } else {
         $canonicalurl = new moodle_url('/local/page/index.php', ['id' => $custompage->id]);

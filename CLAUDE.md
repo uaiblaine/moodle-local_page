@@ -9,8 +9,11 @@ Plugin context: a Moodle **local** plugin ("Custom pages") that lets an
 administrator author standalone site pages — HTML body, optional raw Content
 HTML, SEO/Open Graph metadata, a publish window, a status and an access level —
 and serve them at `/local/page/?id=N` or at a friendly URL built from the page's
-`menuname`. It owns one table, `{local_page}`, and two system-context file
-areas, `pagecontent` and `ogimage`. It depends on no sibling plugin. Supports
+`menuname`. It owns one table, `{local_page}`, and two file areas,
+`pagecontent` and `ogimage`, in the system context or a course category's. It
+declares no dependency on any sibling plugin; whether a category's pages reach
+visitors is asked of `local_unlistedcourses` when it is installed, and the
+answer is "no" when it is not (see the viewer gotcha below). Supports
 Moodle **5.2 only** (`$plugin->requires = 2026042000`,
 `$plugin->supported = [502, 502]`). CI is the moodle-an-hochschulen reusable
 workflow, one job per supported branch in `.github/workflows/ci.yml` — **update
@@ -110,7 +113,8 @@ rule did not apply.
 ## Code layout
 
 ```
-index.php            Public viewer. Resolves ?id= or a friendly menuname, then renders.
+index.php            Public viewer. Hands ?id=, ?menuname= or ?category=&page= to the
+                     request class, translates its answer, then renders.
 pages.php            Admin list of pages (cards), and the delete action.
 edit.php             Admin add/edit screen; wraps forms/edit.php.
 forms/edit.php       The whole edit form — the largest file in the plugin.
@@ -118,6 +122,9 @@ lib.php              Function-only library: the access predicate, pluginfile ser
                      the anchored needle matcher used to authorise embedded files.
 renderer.php         showpage() and the placeholder substitution for page content.
 classes/custompage.php      Row wrapper used by the viewer.
+classes/local/request.php   The viewer's decision, in one order, for every address.
+classes/local/publicaccess.php  Fail-closed adapter: is this category public; who is a visitor.
+classes/local/scope.php     Which context a page lives in, and which capability governs it.
 classes/url_rewriter.php    Friendly-URL rewriting (pairs with .htaccess).
 classes/output/             page_card, page_content, pages_list renderables.
 templates/                  Their Mustache counterparts.
@@ -129,10 +136,46 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php.
 ## Architecture gotchas
 
 - **`local_page_user_can_view_page()` (lib.php) is the whole read-side access
-  rule.** Both the renderer (`renderer.php:134`) and the pluginfile callback
-  (`lib.php`, via `local_page_user_can_serve_pagecontent_file()`) go through it,
-  so a hole there is a file served to someone who should not have it, not a
-  display bug. Change it only with `tests/lib_test.php` in front of you.
+  rule.** The request class, the renderer (`showpage()`) and the pluginfile
+  callback (directly for a category page's files, via
+  `local_page_user_can_serve_pagecontent_file()` for the shared site-wide area)
+  all go through it, so a hole there is a file served to someone who should not
+  have it, not a display bug. Since stage 5 it carries the **public-category
+  clause**: a category page is refused to a visitor (nobody logged in, or the
+  guest account) unless `\local_page\local\publicaccess` says its category is
+  public. That clause is what keeps a private category's embedded files away
+  from visitors — the request class refuses them the page, but the file route
+  asks this function alone. It is asked after the `moodle/site:config` shortcut
+  and never for a logged-in user or a site-wide page. Its optional `$predicate`
+  argument exists for tests only. `local_page_ogimage_is_servable()` does NOT
+  carry the clause and must not: an og:image is fetched by anonymous scrapers
+  and is gated on publication state alone (decision D8). Change either only
+  with `tests/lib_test.php` in front of you.
+- **The viewer's guard order is one block, and both entries keep it.**
+  `\local_page\local\request::category()` refuses a visitor BEFORE any lookup
+  unless the category is public, then reads the category's context, then looks
+  the page up scoped to it, then applies the page's own rules, then sets up
+  `$PAGE` with `set_category_by_id()` first (it throws once a course or context
+  is set). Never reorder it: the answers a visitor gets would look identical,
+  and what would change is that an anonymous request reaches the database
+  before it is refused, doing work that differs between ids that exist and ids
+  that do not. `request_test` holds the order by counting database statements on
+  the refusal path (zero), with a public category as the control that the
+  meter sees a lookup. `request::legacy()` (the upstream `?id=` and
+  `?menuname=` addresses) can only apply the predicate AFTER its lookup,
+  because an id names no category until the row is read; stage 6 redirects a
+  category page's id address to its category address. `redirect()` throws
+  under PHPUnit with no URL in the message, which is why the class RETURNS its
+  target and `index.php` calls `redirect()`; the upstream `require_login()` for
+  a page with an access level stays in `index.php`, after that redirect.
+- **`publicaccess` fails closed, and nothing declares a dependency.** Without
+  `\local_unlistedcourses\category_discoverability` nothing is public, which is
+  the state of every CI leg — the plugin is not installed there. Tests that
+  need a public category pass `\local_page\tests\public_predicate`
+  (`tests/classes/`, autoloaded under PHPUnit only) through the `$predicate`
+  argument; the tests that read the real predicate skip themselves, or assert
+  only the refusal, where it is missing. It memoises per category id for the
+  request and ids repeat between tests, so call its `reset_caches()` first.
 - **An access level made only of negations grants the page to everybody.** The
   loop starts at `$canaccess = false`, and `!moodle/site:config` flips it to
   true for anyone who does not hold the capability — which is every visitor,
@@ -207,13 +250,24 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php.
   test names only the fields it is about.
 - `tests/lib_test.php` requires `lib.php` at the top of the file, because
   nothing in a PHPUnit run loads a local plugin's `lib.php` for you.
-- `tests/behat/category_pages.feature` is the plugin's only Behat feature, tagged
-  `@local @local_page` and run with `mdl behat m502 @local_page`. Both scenarios
-  are deliberately non-JavaScript: they walk a category manager from the category
-  page to the pages screen and back, which is the one path no unit test can
-  assert because it is made of links. `mdl ci --behat` therefore proves something
-  here now, and the fleet's "Behat collected no scenarios" guard is live for this
-  plugin rather than skipped.
+- Two Behat features, both tagged `@local @local_page` and run with
+  `mdl behat m502 @local_page`, all scenarios deliberately non-JavaScript.
+  `tests/behat/category_pages.feature` walks a category manager from the
+  category page to the pages screen and back, which is the one path no unit
+  test can assert because it is made of links. `tests/behat/anonymous_viewer.feature`
+  runs with `forcelogin` switched on in its Background — the production state,
+  stated rather than assumed — and holds three things: a visitor still reads a
+  site-wide page, a visitor asking for a category page meets the login page and
+  is brought back to the page after logging in, and an administrator reads that
+  same page. There is no "public category renders for a visitor" scenario on
+  purpose: "public" comes from `local_unlistedcourses`, which the CI matrix does
+  not install, so that control is PHPUnit's (`request_test`, with the predicate
+  double). `tests/generator/behat_local_page_generator.php` creates
+  `"local_page > pages"` (a `category` column takes a category idnumber), and
+  `tests/behat/behat_local_page.php` visits a page at its category address,
+  whose category id Behat cannot compute — that context file must never carry a
+  `MOODLE_INTERNAL` guard. `mdl ci --behat` therefore proves something here, and
+  the fleet's "Behat collected no scenarios" guard is live for this plugin.
 
 ## When in doubt
 

@@ -1149,4 +1149,109 @@ final class lib_test extends \advanced_testcase {
         $this->assertSame((int) $categorycontext->id, (int) \local_page_save_target_context(null, (int) $categorycontext->id)->id);
         $this->assertSame((int) $system->id, (int) \local_page_save_target_context(null, 0)->id);
     }
+
+    /**
+     * A category page reaches a visitor only when its category is public; nobody else is asked.
+     *
+     * The page is live and open to visitors by its own rules, so every refusal below can only be the
+     * category's. Each one sits beside the same page admitted once the double calls the category
+     * public, which is what separates the clause from a predicate that has started refusing
+     * everything. Whether the category is public comes from \local_page\tests\public_predicate,
+     * because the CI matrix does not install local_unlistedcourses.
+     *
+     * @return void
+     */
+    public function test_a_category_page_reaches_a_visitor_only_when_its_category_is_public(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $CFG->forcelogin = 1;
+        $categoryid = (int) $this->getDataGenerator()->create_category()->id;
+        $page = $this->pages()->create_category_page($categoryid);
+        $sitepage = $this->pages()->create_page();
+        $double = \local_page\tests\public_predicate::class;
+
+        foreach (['anonymous', 'guest'] as $label) {
+            if ($label === 'guest') {
+                $this->setGuestUser();
+            } else {
+                $this->setUser(null);
+            }
+
+            $double::reset([]);
+            $this->assertFalse(\local_page_user_can_view_page($page, $double), "{$label}: category not public");
+            $this->assertSame(1, $double::calls(), "{$label}: the refusal was the predicate's");
+
+            $double::reset([$categoryid]);
+            $this->assertTrue(\local_page_user_can_view_page($page, $double), "{$label}: control, category public");
+        }
+
+        // A logged-in user reads the page in a category that is not public, and is never asked about.
+        $double::reset([]);
+        $this->setUser($this->getDataGenerator()->create_user());
+        $this->assertTrue(\local_page_user_can_view_page($page, $double), 'user: category page');
+        $this->assertTrue(\local_page_user_can_view_page($sitepage, $double), 'user: site-wide page');
+        $this->assertSame(0, $double::calls(), 'user: never asked');
+
+        // A site-wide page belongs to no category, so a visitor reads it without the question.
+        $this->setUser(null);
+        $this->assertTrue(\local_page_user_can_view_page($sitepage, $double), 'anonymous: site-wide page');
+        $this->assertSame(0, $double::calls(), 'anonymous: never asked about a site-wide page');
+    }
+
+    /**
+     * A category page's embedded file is refused to a visitor while its category is not public.
+     *
+     * local_page_pluginfile() cannot take a predicate, so this runs the REAL one: on a site without
+     * local_unlistedcourses — every CI leg — the adapter fails closed, and where the plugin is
+     * installed a fresh category is simply not public. Either way the refusal is the category's, and
+     * the controls say so: the file really is in the area, and the page's own rules admit a visitor
+     * once a double calls the category public. Only the refusal goes through the route itself, for
+     * the reason the og:image tests give — a served file reaches readfile_accel(), which closes
+     * PHPUnit's output buffers. Where local_unlistedcourses is installed, the category is then made
+     * public for real and the same visitor may read the page through the default predicate, which
+     * is the call the route makes.
+     *
+     * @return void
+     */
+    public function test_a_category_pages_file_is_refused_to_a_visitor_outside_a_public_category(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $CFG->forcelogin = 1;
+        $predicate = \local_page\local\publicaccess::PREDICATE;
+        if (class_exists($predicate)) {
+            // Memoised per category id for the request, and ids repeat between tests.
+            $predicate::reset_caches();
+        }
+
+        $categoryid = (int) $this->getDataGenerator()->create_category()->id;
+        $context = \core\context\coursecat::instance($categoryid);
+        $page = $this->pages()->create_category_page($categoryid, ['pagecontent' => '<p><img src="@@PLUGINFILE@@/body.png"></p>']);
+        $this->store_pagecontent_file((int) $context->id, (int) $page->id, 'body.png');
+
+        $this->setUser(null);
+
+        // Controls: the file is there, and nothing but the category stands between the visitor and the page.
+        $fs = get_file_storage();
+        $this->assertNotEmpty($fs->get_file($context->id, 'local_page', 'pagecontent', (int) $page->id, '/', 'body.png'));
+        \local_page\tests\public_predicate::reset([$categoryid]);
+        $this->assertTrue(\local_page_user_can_view_page($page, \local_page\tests\public_predicate::class));
+
+        $this->assertFalse(\local_page_user_can_view_page($page), 'the real predicate: not public');
+        $this->assertFalse(
+            \local_page_pluginfile(null, null, $context, 'pagecontent', [(int) $page->id, 'body.png'], false, ['dontdie' => true]),
+            'the route refuses the file'
+        );
+
+        if (!class_exists($predicate)) {
+            return;
+        }
+
+        $this->setAdminUser();
+        $predicate::set_state($categoryid, $predicate::STATE_PUBLIC);
+        $predicate::reset_caches();
+        $this->setUser(null);
+        $this->assertTrue(\local_page_user_can_view_page($page), 'made public for real, the visitor may read it');
+    }
 }

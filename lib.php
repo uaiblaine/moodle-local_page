@@ -491,10 +491,19 @@ function local_page_apply_publish_gate(\stdClass $record, \core\context $context
  * category is previewed by whoever may author that category's pages, not by whoever may author the
  * site's, and an accesslevel entry means what it means where the page lives.
  *
+ * A page belonging to a course category is on the internet only when its category is: a VISITOR
+ * (nobody logged in, or the guest account) is refused unless \local_page\local\publicaccess says
+ * the category is public, and that adapter fails closed when local_unlistedcourses is not installed.
+ * The clause lives here rather than only in the viewer because this function is also what the
+ * pluginfile route asks about a category page's embedded files — without it the viewer would refuse
+ * a visitor the page while the file route served them its images. A logged-in user is never asked
+ * about, and a site-wide page never is either.
+ *
  * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage} with the same fields
+ * @param string|null $predicate Public predicate class for the category clause; tests pass a double
  * @return bool
  */
-function local_page_user_can_view_page(object $page): bool {
+function local_page_user_can_view_page(object $page, ?string $predicate = null): bool {
     global $CFG;
 
     require_once($CFG->libdir . '/accesslib.php');
@@ -514,6 +523,15 @@ function local_page_user_can_view_page(object $page): bool {
 
     if (has_capability('moodle/site:config', $context)) {
         return true;
+    }
+
+    // A category page reaches a visitor only when its category is public; the page's own rules come after.
+    if (
+        $context->contextlevel == CONTEXT_COURSECAT
+        && \local_page\local\publicaccess::is_visitor()
+        && !\local_page\local\publicaccess::is_public((int) $context->instanceid, $predicate)
+    ) {
+        return false;
     }
 
     $canaccess = true;

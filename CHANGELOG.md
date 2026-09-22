@@ -1,5 +1,49 @@
 # CHANGELOG
 
+## [1.0.10+uai.6] - 2026-09-22
+
+The viewer for category pages. A category's pages could be authored since the previous release, and
+a visitor who was not logged in could read any of them that its own rules allowed; from this release
+a category page reaches a visitor only when the category itself is public. Site-wide pages are
+untouched: their addresses, their rules and what a visitor sees on them are what upstream produced.
+No schema change and no upgrade step.
+
+### Added
+- **`\local_page\local\request`, the viewer's decision in one order.** `index.php` used to load the
+  row, set up `$PAGE` and ask the access predicate itself; the request class now does all three and
+  the script only translates its answer — a redirect target, or a page and whether the viewer may
+  read it. For a category address the order is a security property: a visitor is refused before
+  anything is looked up unless the category is public, then the category's context, then the lookup
+  scoped to it, then the page's own rules, then `$PAGE` with `set_category_by_id()` first.
+- **`\local_page\local\publicaccess`**, a fail-closed adapter over
+  `local_unlistedcourses`' `category_discoverability::is_public()`, and the one definition of a
+  visitor: nobody logged in, or the guest account.
+- **The category address `/local/page/index.php?category=N&page=slug`** (or `&id=M`), answered by the
+  existing script. Stage 6 adds a routed address beside it.
+- `tests/local/request_test.php`, `tests/local/publicaccess_test.php`, a shared predicate double in
+  `tests/classes/`, the plugin's first Behat generator and step context, the feature
+  `tests/behat/anonymous_viewer.feature` run under `forcelogin`, and six more entries in
+  `mutations/gates.conf`.
+
+### Changed
+- **A category page is served to visitors only when its category is public** as
+  `local_unlistedcourses` defines it — the public state, a visible category and a visible path above
+  it. Without that plugin nothing is public and a visitor is sent to the login page: the adapter
+  fails closed, and neither plugin declares a dependency on the other. The rule lives in
+  `local_page_user_can_view_page()`, so it holds for a category page's **embedded files** as well
+  as for the page.
+- **The guest account counts as a visitor.** Core treats a guest session as logged in; here it is
+  refused and admitted on exactly the terms of somebody not logged in at all.
+- A visitor meets **one refusal** at a category address — the login page, bringing them back to the
+  page after they log in — whether the category is private, hidden or not there at all, so the
+  address cannot be used to learn which categories exist; the same refusal answers an address that
+  names no page of the category, and a page the category holds but withholds from visitors by its
+  own rules — a draft, a page for logged-in readers, one outside its publish window — so that inside
+  a public category the slugs that exist cannot be told from the ones that do not, and a reader of a
+  page kept for logged-in readers is taken to the login form rather than left on a page that says
+  nothing. A logged-in user asking for a page that is not there, or for a draft, still gets the
+  "no access" page.
+
 ## [1.0.10+uai.5] - 2026-09-22
 
 The authoring UI for category pages. Until this release a category's pages could be listed, but
