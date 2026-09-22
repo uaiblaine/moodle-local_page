@@ -147,16 +147,27 @@ class local_page_renderer extends plugin_renderer_base {
 
         $form = '';
 
-        // Format the page content to prevent XSS attacks.
-        $pagecontent = format_text(
-            $this->adduserdata($page->pagecontent),
-            FORMAT_HTML,
-            ['trusted' => true, 'noclean' => true]
-        );
+        /*
+         * Which rule applies to the stored HTML is decided by where the page lives, and the
+         * decision itself is local_page_render_content() so that a test can reach it without a
+         * renderer. A site-wide page keeps upstream's trusted, uncleaned rendering; a category
+         * page goes through core's trusttext rules, honouring $CFG->enabletrusttext and the
+         * author's moodle/site:trustcontent exactly as core does.
+         */
+        $iscategory = \local_page\local\scope::is_category($page);
+        $pagecontent = local_page_render_content($page, (string) $this->adduserdata($page->pagecontent));
         // Add content HTML if available (raw HTML content). Avoid PHP empty() — it treats "0" as empty.
         $contenthtml = '';
         if ($page->contenthtml !== null && $page->contenthtml !== '') {
             $contenthtml = $this->adduserdata($page->contenthtml);
+            /*
+             * In a category the raw block is not raw: it goes through the same call as the editor
+             * content, so it is cleaned on the same terms and filtered as well. A site-wide page
+             * keeps the concatenation upstream wrote, which is what every existing page relies on.
+             */
+            if ($iscategory) {
+                $contenthtml = local_page_render_content($page, (string) $contenthtml);
+            }
         }
         // Replace placeholders in the page content with the actual form content.
         $content = str_replace(["#form#", "{form}"], [$form, $form], $pagecontent);
@@ -274,7 +285,13 @@ class local_page_renderer extends plugin_renderer_base {
             $recordpage = new stdClass();
             $recordpage->id = $editable === null ? 0 : (int) $editable->id;
             $recordpage->pagename = $data->pagename;
-            if (get_config('local_page', 'additionalhead')) {
+            /*
+             * The head field is system scope only — no sanitiser exists for head markup, so a
+             * category author is not offered it and a category page never stores one. The form
+             * omits the element under the same two conditions, so $data->meta does not exist here
+             * for a category page either.
+             */
+            if (!$iscategory && get_config('local_page', 'additionalhead')) {
                 $recordpage->meta = $data->meta;
             }
             $recordpage->menuname = strtolower(trim((string) $data->menuname));
@@ -296,6 +313,21 @@ class local_page_renderer extends plugin_renderer_base {
             // The context the page belongs to, in the stored convention (0 is the system scope).
             $recordpage->contextid = \local_page\local\scope::stored_contextid($writecontext);
             $recordpage->categoryid = $iscategory ? (int) $writecontext->instanceid : null;
+
+            /*
+             * Whether THIS author was trusted with unclean HTML, recorded on every save including a
+             * site-wide one, where it is harmless and true rather than assumed. The viewer and the
+             * editor both read it back for a category page; a site-wide page ignores it.
+             */
+            $recordpage->contenttrust = local_page_content_trust($writecontext);
+
+            /*
+             * Publishing to visitors who are not logged in is a capability of its own. The form
+             * freezes the field when the editor does not hold it, but a frozen select stops
+             * nothing that is posted by hand, so the record is corrected here — the last point
+             * before it is written.
+             */
+            $recordpage = local_page_apply_publish_gate($recordpage, $writecontext);
 
             /*
              * The uniqueness of a friendly URL is decided by a read followed by a write, so two
@@ -383,7 +415,13 @@ class local_page_renderer extends plugin_renderer_base {
         $editcontext = $context ?? context_system::instance();
         $mform = new pages_edit_product_form($page, $editcontext);
         $forform = new stdClass();
-        $forform->pagecontent['text'] = $page->pagecontent;
+        /*
+         * Both HTML fields come back through local_page_editable_content(), which is core's
+         * trusttext_pre_edit() rule: a category page written by a trusted author is cleaned before
+         * an untrusted one may see — and re-save — it. A site-wide page is handed back unchanged,
+         * as upstream has it.
+         */
+        $forform->pagecontent['text'] = local_page_editable_content($page, 'pagecontent', $editcontext);
         $forform->pagename = $page->pagename;
         $forform->meta = $page->meta;
         $forform->accesslevel = $page->accesslevel;
@@ -401,7 +439,7 @@ class local_page_renderer extends plugin_renderer_base {
         $forform->enddate = $page->enddate;
         $forform->onlyloggedin = $page->onlyloggedin;
         $forform->hidetitle = $page->hidetitle;
-        $forform->contenthtml = $page->contenthtml;
+        $forform->contenthtml = local_page_editable_content($page, 'contenthtml', $editcontext);
         $mform->set_data($forform);
         $mform->display();
     }

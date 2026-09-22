@@ -27,7 +27,7 @@ defined('MOODLE_INTERNAL') || die;
 
 $plugin->requires   = 2026042000; // Moodle 5.2.
 $plugin->supported  = [502, 502];
-$plugin->version    = 2026092202;
-$plugin->release    = 'v1.0.10+uai.3';
+$plugin->version    = 2026092203;
+$plugin->release    = 'v1.0.10+uai.4';
 $plugin->maturity   = MATURITY_STABLE;
 $plugin->component  = 'local_page';

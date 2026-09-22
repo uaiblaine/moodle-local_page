@@ -78,6 +78,42 @@ final class edit_form_test extends \advanced_testcase {
     }
 
     /**
+     * The QuickForm behind a built form, so a test can ask what definition() actually added.
+     *
+     * moodleform keeps it protected and offers no accessor, and adding one to an upstream file for
+     * the sake of a test is a change to the fork's surface for nothing. Reflection reads it without
+     * touching the plugin — no setAccessible() call is needed, since PHP 8.1 made protected members
+     * reachable through ReflectionProperty by default.
+     *
+     * @param \pages_edit_product_form $form A built form.
+     * @return \MoodleQuickForm The form's own element collection.
+     */
+    private function mform(\pages_edit_product_form $form): \MoodleQuickForm {
+        return (new \ReflectionProperty(\moodleform::class, '_form'))->getValue($form);
+    }
+
+    /**
+     * A fresh user holding exactly one capability, at one context and nowhere else.
+     *
+     * @param string $capability Capability name, e.g. local/page:publishcategorypages.
+     * @param \core\context $context Context to grant and assign the role at.
+     * @return \stdClass The user record.
+     */
+    private function user_holding_at(string $capability, \core\context $context): \stdClass {
+        $user = $this->getDataGenerator()->create_user();
+        $roleid = $this->getDataGenerator()->create_role();
+        $this->getDataGenerator()->create_role_capability(
+            $roleid,
+            [$capability => 'allow'],
+            $context
+        );
+        role_assign($roleid, $user->id, $context->id);
+        accesslib_clear_all_caches_for_unit_testing();
+
+        return $user;
+    }
+
+    /**
      * Runs validation() over one set of submitted values.
      *
      * The contextid defaults to 0, the stored convention for the site-wide scope, which is what an
@@ -330,5 +366,111 @@ final class edit_form_test extends \advanced_testcase {
         // Several pages may be slugless at once, so an empty value never collides.
         $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => '']));
         $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => '   ']));
+    }
+
+    /**
+     * An editor who may not publish sees the field frozen at "Yes", and is told why.
+     *
+     * The freeze is not the enforcement — the save path applies local_page_apply_publish_gate()
+     * whatever is posted — it is what stops the control from looking as though it worked. The
+     * static line beside it is the half that makes the state explainable rather than mysterious.
+     *
+     * @return void
+     */
+    public function test_the_publishing_field_is_frozen_for_a_category_editor_who_may_not_publish(): void {
+        $this->resetAfterTest();
+
+        $category = $this->getDataGenerator()->create_category();
+        $context = \core\context\coursecat::instance($category->id);
+
+        $this->setUser($this->user_holding_at('local/page:managecategorypages', $context));
+        $mform = $this->mform($this->form($context));
+
+        $this->assertTrue($mform->getElement('onlyloggedin')->isFrozen(), 'the field is frozen');
+        /*
+         * Frozen at "logged in only", and held there by a constant: MoodleQuickForm::exportValues()
+         * merges the constants over everything else (formslib.php:2442), so this is the value the
+         * form yields whatever arrives in the request.
+         */
+        $this->assertSame(
+            ['1'],
+            (array) $mform->getElementValue('onlyloggedin'),
+            'the frozen value'
+        );
+        $this->assertSame('1', $mform->_constantValues['onlyloggedin'], 'held there by a constant');
+        $this->assertTrue(
+            $mform->elementExists('onlyloggedin_publishlocked'),
+            'the explanation is on the form'
+        );
+    }
+
+    /**
+     * A holder of the publishing capability keeps the choice, and so does a site-wide editor.
+     *
+     * This is the control for the test above, in both directions: a rule that had simply frozen
+     * the field for everybody would pass that one on its own, and a rule keyed on the capability
+     * without the context would pass it while a sibling category's manager published freely.
+     *
+     * @return void
+     */
+    public function test_the_publishing_field_is_left_alone_for_a_publisher_and_for_a_site_page(): void {
+        $this->resetAfterTest();
+
+        $cata = $this->getDataGenerator()->create_category();
+        $catb = $this->getDataGenerator()->create_category();
+        $ctxa = \core\context\coursecat::instance($cata->id);
+        $ctxb = \core\context\coursecat::instance($catb->id);
+
+        $publisher = $this->user_holding_at('local/page:publishcategorypages', $ctxa);
+        $this->setUser($publisher);
+
+        $mform = $this->mform($this->form($ctxa));
+        $this->assertFalse($mform->getElement('onlyloggedin')->isFrozen(), 'publisher, own category');
+        $this->assertFalse($mform->elementExists('onlyloggedin_publishlocked'), 'and no explanation');
+
+        // The same publisher in the category next door, where they hold nothing.
+        $sibling = $this->mform($this->form($ctxb));
+        $this->assertTrue($sibling->getElement('onlyloggedin')->isFrozen(), 'publisher, sibling category');
+
+        // A site-wide page is governed by local/page:addpages alone, as upstream has it.
+        $this->setAdminUser();
+        $system = $this->mform($this->form(\context_system::instance()));
+        $this->assertFalse($system->getElement('onlyloggedin')->isFrozen(), 'site-wide page');
+        $this->assertFalse($system->elementExists('onlyloggedin_publishlocked'), 'and no explanation');
+    }
+
+    /**
+     * The per-page head HTML field is offered on a site-wide page only.
+     *
+     * No sanitiser exists for head markup, so the field stays with the capability that is declared
+     * RISK_XSS for carrying exactly that. The setting is the control: with it off the field is
+     * absent everywhere, so its absence in a category is the scope rule and not the setting.
+     *
+     * @return void
+     */
+    public function test_the_head_html_field_is_offered_on_a_site_wide_page_only(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $category = $this->getDataGenerator()->create_category();
+        $context = \core\context\coursecat::instance($category->id);
+
+        set_config('additionalhead', 1, 'local_page');
+
+        $this->assertTrue(
+            $this->mform($this->form(\context_system::instance()))->elementExists('meta'),
+            'site-wide page, setting on'
+        );
+        $this->assertFalse(
+            $this->mform($this->form($context))->elementExists('meta'),
+            'category page, setting on'
+        );
+
+        // Control: with the setting off even the site-wide form has no such field.
+        set_config('additionalhead', 0, 'local_page');
+        $this->assertFalse(
+            $this->mform($this->form(\context_system::instance()))->elementExists('meta'),
+            'site-wide page, setting off'
+        );
     }
 }

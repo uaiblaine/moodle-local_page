@@ -97,5 +97,23 @@ function xmldb_local_page_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026092202, 'local', 'page');
     }
 
+    if ($oldversion < 2026092203) {
+        // A page now records whether the author of its content was trusted with unclean HTML at
+        // the moment it was saved, in core's trusttext sense. The column defaults to 0, which is
+        // the safe reading for every row written before this release: a category page whose flag
+        // is 0 is cleaned on the way out and on the way back into the editor. Site-wide pages
+        // ignore the flag entirely — they keep upstream's trusted rendering — so nothing an
+        // existing site is serving changes.
+
+        $table = new xmldb_table('local_page');
+
+        $field = new xmldb_field('contenttrust', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'contenthtml');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026092203, 'local', 'page');
+    }
+
     return true;
 }

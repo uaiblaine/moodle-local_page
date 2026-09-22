@@ -34,7 +34,7 @@ $string['backtolist'] = "Return to Pages List";
 $string['confirmdeletepage'] = 'Are you sure you want to delete the page \'{$a}\'?';
 $string['contenthtml'] = 'Content HTML';
 $string['contenthtml_description'] = 'Raw HTML Content';
-$string['contenthtml_description_help'] = 'Enter raw HTML content that will be displayed directly on the page. This content will not be processed by the editor and will be rendered as-is. Use with caution as it can affect page layout and security.';
+$string['contenthtml_description_help'] = 'Enter raw HTML content that will be displayed directly on the page. This content will not be processed by the editor and will be rendered as-is. Use with caution as it can affect page layout and security. On a page belonging to a course category the block is cleaned like any other content, unless its author is trusted with unclean HTML on this site.';
 $string['contenthtml_placeholder'] = 'Enter raw HTML content here...';
 $string['custompage_title'] = 'Page Management';
 $string['delete'] = "Remove";
@@ -86,6 +86,7 @@ $string['onlyloggedin_description_help'] = "<ul>
     <li>Non-logged in users will see a message that the page is only visible to logged in users.</li>
     <li>Guest users will see a message that the page is only visible to logged in users.</li>
 </ul>";
+$string['onlyloggedin_publishlocked'] = 'Publishing to visitors who are not logged in needs the capability \'Publish a category page to visitors who are not logged in\' (<code>local/page:publishcategorypages</code>) in this course category, which you do not hold here. The page is saved for logged-in users only.';
 $string['page:addpages'] = 'Add and edit custom site pages (trusted HTML, raw head meta, and Content HTML—declared as RISK_XSS). The default course creator role can perform this site-wide; assign only to roles that should be able to inject arbitrary markup for all visitors.';
 $string['page:managecategorypages'] = 'Create and edit the custom pages that belong to a course category. Holders author pages only in the categories where they hold the capability; the site-wide pages stay with \'Add and edit custom site pages\'. Declared as RISK_SPAM because a page carries author-written text.';
 $string['page:publishcategorypages'] = 'Publish a category page to visitors who are not logged in. Deliberately separate from authoring: writing a page and putting it in front of the open web are different acts, and a role may be trusted with one and not the other. Declared now and enforced by the publishing gate that follows it.';

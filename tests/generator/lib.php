@@ -68,6 +68,7 @@ final class local_page_generator extends component_generator_base {
             'deleted' => 0,
             'pagecontent' => '<p>Body</p>',
             'contenthtml' => '',
+            'contenttrust' => 0,
             'pagedata' => '',
             'meta' => '',
             'metadescription' => '',

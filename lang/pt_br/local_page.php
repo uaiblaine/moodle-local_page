@@ -33,7 +33,7 @@ $string['backtolist'] = 'Voltar à lista de páginas';
 $string['confirmdeletepage'] = 'Tem certeza de que deseja excluir a página \'{$a}\'?';
 $string['contenthtml'] = 'HTML de conteúdo';
 $string['contenthtml_description'] = 'Conteúdo HTML bruto';
-$string['contenthtml_description_help'] = 'Informe o conteúdo HTML bruto que será exibido diretamente na página. Esse conteúdo não passa pelo editor e é renderizado exatamente como foi digitado. Use com cautela, pois pode afetar o layout e a segurança da página.';
+$string['contenthtml_description_help'] = 'Informe o conteúdo HTML bruto que será exibido diretamente na página. Esse conteúdo não passa pelo editor e é renderizado exatamente como foi digitado. Use com cautela, pois pode afetar o layout e a segurança da página. Em uma página que pertence a uma categoria de cursos, o bloco é limpo como qualquer outro conteúdo, a menos que o autor tenha permissão para gravar HTML sem limpeza neste site.';
 $string['contenthtml_placeholder'] = 'Informe aqui o conteúdo HTML bruto...';
 $string['custompage_title'] = 'Gerenciamento de páginas';
 $string['delete'] = 'Remover';
@@ -85,6 +85,7 @@ $string['onlyloggedin_description_help'] = '<ul>
     <li>Usuários não autenticados veem uma mensagem informando que a página é visível somente para usuários autenticados.</li>
     <li>Usuários visitantes veem uma mensagem informando que a página é visível somente para usuários autenticados.</li>
 </ul>';
+$string['onlyloggedin_publishlocked'] = 'Publicar para visitantes não autenticados exige a permissão \'Publicar uma página de categoria para visitantes não autenticados\' (<code>local/page:publishcategorypages</code>) nesta categoria de cursos, que você não possui aqui. A página é salva apenas para usuários autenticados.';
 $string['page:addpages'] = 'Adicionar e editar páginas personalizadas do site (HTML confiável, metadados brutos de cabeçalho e HTML de conteúdo — declarada como RISK_XSS). O papel padrão de criador de curso pode exercê-la em todo o site; atribua-a apenas a papéis que devam poder injetar marcação arbitrária para todos os visitantes.';
 $string['page:managecategorypages'] = 'Criar e editar as páginas personalizadas que pertencem a uma categoria de cursos. Quem tem esta permissão edita páginas apenas nas categorias em que ela foi concedida; as páginas do site continuam sob \'Adicionar e editar páginas personalizadas do site\'. Declarada como RISK_SPAM porque a página carrega texto escrito pelo autor.';
 $string['page:publishcategorypages'] = 'Publicar uma página de categoria para visitantes não autenticados. Propositalmente separada da edição: escrever uma página e colocá-la diante da web aberta são atos diferentes, e um papel pode merecer confiança para um e não para o outro. Declarada agora e aplicada pela verificação de publicação que vem a seguir.';

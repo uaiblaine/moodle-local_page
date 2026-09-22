@@ -19,6 +19,17 @@ This module allows users to create and manage custom pages within Moodle. It pro
 - **Access Level**: Specify the capabilities required to view the page. Use commas to separate multiple capabilities.
 - **Additional HTML**: Optionally add custom HTML to the `<head>` section of the page for additional styling or scripts.
 
+## Category pages (this fork)
+
+A page may belong to a course category instead of to the site, and the two are governed
+differently. Its HTML is cleaned by Moodle unless the author was trusted with unclean markup when
+they saved it — that is, unless the site has `$CFG->enabletrusttext` on **and** the author holds
+`moodle/site:trustcontent` in that category — while a site-wide page keeps the trusted, uncleaned
+rendering it has always had; the per-page `<head>` field stays with site-wide pages, because no
+sanitiser exists for head markup. Showing a category page to visitors who are not logged in is a
+separate capability, `local/page:publishcategorypages`: a page saved by somebody without it in that
+category is stored for logged-in users only, whatever the form posted.
+
 ## Friendly URLs (`menuname`)
 
 Pages can use a **Friendly URL** slug (`menuname`) so viewers can open  

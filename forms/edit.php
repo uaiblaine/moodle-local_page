@@ -192,6 +192,28 @@ class pages_edit_product_form extends moodleform {
         $mform->setType('onlyloggedin', PARAM_INT); // Set the type for the nonloggedin field.
         $mform->addHelpButton('onlyloggedin', 'onlyloggedin_description', 'local_page'); // Add help button.
 
+        /*
+         * Publishing a category page to visitors who are not logged in needs a capability of its
+         * own. An editor without it sees the field frozen at "Yes" and a line saying why, rather
+         * than a control that appears to work and is silently overridden on save — the save path
+         * applies local_page_apply_publish_gate() whatever is posted, which is what actually
+         * enforces this. A site-wide page is untouched: it is governed by local/page:addpages.
+         */
+        if (
+            $this->pagecontext->contextlevel == CONTEXT_COURSECAT
+            && !has_capability('local/page:publishcategorypages', $this->pagecontext)
+        ) {
+            $mform->setDefault('onlyloggedin', '1');
+            $mform->setConstant('onlyloggedin', '1');
+            $mform->hardFreeze('onlyloggedin');
+            $mform->addElement(
+                'static',
+                'onlyloggedin_publishlocked',
+                '',
+                get_string('onlyloggedin_publishlocked', 'local_page')
+            );
+        }
+
         // Text area for the page name.
         $mform->addElement(
             'textarea',
@@ -249,7 +271,23 @@ class pages_edit_product_form extends moodleform {
 
         // Editor for page content.
         $context = $this->pagecontext; // The context this page belongs to.
-        $editoroptions = ['maxfiles' => EDITOR_UNLIMITED_FILES, 'noclean' => true, 'context' => $context];
+        $editoroptions = ['maxfiles' => EDITOR_UNLIMITED_FILES, 'context' => $context];
+        if ($context->contextlevel == CONTEXT_COURSECAT) {
+            /*
+             * A category page declares trusttext instead of noclean. What lib/form/editor.php does
+             * with the option is accept it into the element's own option list (:59); the code that
+             * READS it is core's file_prepare_standard_editor() / file_postupdate_standard_editor()
+             * (filelib.php:154,225), which this plugin does not use — it prepares and saves the
+             * draft area itself. So the declaration cleans nothing on its own: the pre-edit
+             * cleaning is local_page_editable_content() and the flag is captured by
+             * local_page_content_trust(). What the element does for every editor, whatever is
+             * passed, is set its own 'trusted' option from trusttext_trusted($context) (:98).
+             */
+            $editoroptions['trusttext'] = true;
+        } else {
+            // A site-wide page keeps upstream's editor exactly: local/page:addpages is RISK_XSS.
+            $editoroptions['noclean'] = true;
+        }
 
         $mform->addElement(
             'editor',
@@ -303,7 +341,14 @@ class pages_edit_product_form extends moodleform {
         $mform->addElement('text', 'metarobots', get_string('metarobots', 'local_page'));
         $mform->setType('metarobots', PARAM_TEXT); // Set the type for meta robots.
         $mform->addHelpButton('metarobots', 'metarobots_description', 'local_page'); // Add help button.
-        if (get_config('local_page', 'additionalhead')) {
+        /*
+         * The head field is offered only on a site-wide page. Every other field a page stores is
+         * body HTML, which clean_text() can judge; a <head> fragment can carry a script element, a
+         * meta refresh or a base tag, and no sanitiser is written for that — so the field stays
+         * with the people who hold local/page:addpages, and a category author is not offered it.
+         * The save path applies the same two conditions.
+         */
+        if (get_config('local_page', 'additionalhead') && $this->pagecontext->contextlevel == CONTEXT_SYSTEM) {
             // Text area for additional HTML head content.
             $mform->addElement('textarea', 'meta', get_string('edit_head', 'local_page'));
             $mform->setType('meta', PARAM_RAW); // Set the type for meta content.

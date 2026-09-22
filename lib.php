@@ -214,6 +214,177 @@ function local_page_save_target_context(?\stdClass $editable, int $contextid): \
 }
 
 /**
+ * Whether the author writing in a context is trusted with unclean HTML, in core's sense.
+ *
+ * Core's rule, not this plugin's: trusttext_trusted() is true only when $CFG->enabletrusttext is
+ * on AND the user holds moodle/site:trustcontent at the context being written in
+ * (lib/weblib.php:948-951). Both halves are load-bearing here.
+ *
+ * The setting is off by default on every Moodle site, so on an ordinary site this answers 0 for
+ * everybody including the administrator, and every category page is cleaned. That is the intended
+ * reading: the trust feature is something a site turns on deliberately.
+ *
+ * The context is the PAGE'S OWN, which is what keeps the delegation honest. Somebody trusted in
+ * their own category is trusted there and nowhere else; being handed one category's pages does
+ * not make them a site-wide content author.
+ *
+ * The answer is stored in {local_page}.contenttrust at save time rather than recomputed when the
+ * page is rendered, which is what core does too (mod/forum/lib.php:253 stores messagetrust the
+ * same way): the question is whether the person who WROTE this HTML was trusted, and the person
+ * reading it later is somebody else entirely.
+ *
+ * @param \core\context $context Context the page is being written in
+ * @return int 1 when the current user may store unclean HTML there, 0 otherwise
+ */
+function local_page_content_trust(\core\context $context): int {
+    return trusttext_trusted($context) ? 1 : 0;
+}
+
+/**
+ * Renders one stored HTML field of a page for the public viewer.
+ *
+ * The decision this function makes is which of two rules applies, and it lives here rather than in
+ * the renderer so that a test can reach it without building one.
+ *
+ * A SITE-WIDE page keeps upstream's rendering byte for byte: trusted and not cleaned. Whoever
+ * holds local/page:addpages is trusted with arbitrary markup by construction — the capability is
+ * declared RISK_XSS precisely because a site page carries editor HTML, raw Content HTML and
+ * optional head markup — so cleaning it would break every page such a site already serves.
+ *
+ * A CATEGORY page goes through core's trusttext rules instead. The text is cleaned unless the
+ * author was trusted when they saved it, and two facts about core decide what that means:
+ *
+ * - with $CFG->enabletrusttext off — the default on every site — nothing is trusted, so the
+ *   content is cleaned even when the stored flag says its author was trusted at the time;
+ * - $CFG->forceclean overrides the lot (lib/classes/formatting.php:195), including the site-wide
+ *   branch above, because an administrator who sets it has said they want everything cleaned.
+ *
+ * Neither of those is this plugin's rule, and neither can be worked around from here.
+ *
+ * Note that the category branch passes the page's own context, so the filters that run over the
+ * text are the ones configured where the page lives; and that the Content HTML block of a category
+ * page comes through this same call, so it is filtered as well as cleaned. That is intended: in a
+ * category there is no second, unfiltered channel.
+ *
+ * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
+ * @param string $text The field's stored text, with placeholders already substituted
+ * @return string HTML ready to be written into the page
+ * @throws \dml_missing_record_exception When the row's stored context id names no context
+ */
+function local_page_render_content(object $page, string $text): string {
+    if (!\local_page\local\scope::is_category($page)) {
+        return format_text($text, FORMAT_HTML, ['trusted' => true, 'noclean' => true]);
+    }
+
+    return format_text($text, FORMAT_HTML, [
+        'trusted' => (bool) ($page->contenttrust ?? 0),
+        'context' => \local_page\local\scope::context($page),
+    ]);
+}
+
+/**
+ * The text of one stored field as it may be handed back to an editor.
+ *
+ * This is the half of the trusttext contract that is easy to leave out, and leaving it out undoes
+ * the other half: without it an untrusted editor opens a category page a trusted colleague wrote,
+ * the script the viewer never sees arrives in their form, and saving the page unchanged stores it
+ * again under their own — untrusted — flag. Core solves it with trusttext_pre_edit(), and
+ * mod_forum calls that function before editing a post (mod/forum/post.php:344).
+ *
+ * It calls core's function rather than restating the two-line rule, so that the rule cannot drift:
+ * core also declines to clean FORMAT_MARKDOWN, and anything it adds later arrives here for free.
+ * The ad-hoc object exists because trusttext_pre_edit() reads sibling columns named after the
+ * field ({$field}trust, {$field}format) while this plugin stores ONE contenttrust flag covering
+ * both of its HTML fields — they are written by the same author in the same save, so one flag is
+ * the truth about both.
+ *
+ * A SITE-WIDE page is returned unchanged, which is upstream's behaviour and the counterpart of the
+ * rendering rule: its author is trusted by construction.
+ *
+ * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
+ * @param string $field Name of the stored field, 'pagecontent' or 'contenthtml'
+ * @param \core\context $context The page's own context, which is where trust is evaluated
+ * @return string The text to put in the form
+ * @throws \dml_missing_record_exception When the row's stored context id names no context
+ */
+function local_page_editable_content(object $page, string $field, \core\context $context): string {
+    $text = (string) ($page->$field ?? '');
+
+    if (!\local_page\local\scope::is_category($page)) {
+        return $text;
+    }
+
+    $adhoc = (object) [
+        $field => $text,
+        $field . 'trust' => (int) ($page->contenttrust ?? 0),
+        $field . 'format' => FORMAT_HTML,
+    ];
+
+    return (string) trusttext_pre_edit($adhoc, $field, $context)->$field;
+}
+
+/**
+ * The per-page HTML a page contributes to the document head.
+ *
+ * The head field is SYSTEM SCOPE ONLY, and the reason is that there is no sanitiser for head
+ * markup: everything else a page stores is body HTML, which clean_text() understands, while a
+ * <head> fragment can carry a script element, a meta refresh or a base tag that no HTML purifier
+ * is written to judge. So the field is not offered to a category author, and a row that holds one
+ * from before — or from a site-wide page later moved by hand — is ignored rather than rendered.
+ *
+ * The site setting is read here too, so index.php has one thing to ask instead of two, and so that
+ * this decision is reachable by a test: index.php is a script.
+ *
+ * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
+ * @return string The stored head HTML, or an empty string when it must not be emitted
+ * @throws \dml_missing_record_exception When the row's stored context id names no context
+ */
+function local_page_head_html(object $page): string {
+    if (!get_config('local_page', 'additionalhead')) {
+        return '';
+    }
+
+    if (\local_page\local\scope::is_category($page)) {
+        return '';
+    }
+
+    return (string) ($page->meta ?? '');
+}
+
+/**
+ * Forces a category page to logged-in visitors unless its editor may publish to the open web.
+ *
+ * Publishing is a separate power from authoring, which is why local/page:publishcategorypages is a
+ * separate capability: writing a page is an editing act, putting it in front of visitors who are
+ * not logged in is not, and a site may well delegate the first without the second.
+ *
+ * The gate is applied on the SAVE PATH, not only in the form. The form freezes the field so the
+ * reason is visible while editing, but the field travels through the browser and a frozen select
+ * is no barrier to a posted value — so the record is corrected here, right before it is written,
+ * whatever arrived.
+ *
+ * The system context is returned untouched: a site-wide page is governed by local/page:addpages
+ * alone, exactly as upstream has it, and nothing in this stage narrows that.
+ *
+ * @param \stdClass $record The record about to be written to {local_page}
+ * @param \core\context $context Context the page is being saved into
+ * @return \stdClass The same record, with onlyloggedin forced to 1 where the gate applies
+ */
+function local_page_apply_publish_gate(\stdClass $record, \core\context $context): \stdClass {
+    if ($context->contextlevel != CONTEXT_COURSECAT) {
+        return $record;
+    }
+
+    if (has_capability('local/page:publishcategorypages', $context)) {
+        return $record;
+    }
+
+    $record->onlyloggedin = 1;
+
+    return $record;
+}
+
+/**
  * Whether the current user may view a local page under the same rules as the public renderer.
  *
  * Mirrors local_page_renderer::showpage() access checks (status, dates, onlyloggedin, accesslevel,

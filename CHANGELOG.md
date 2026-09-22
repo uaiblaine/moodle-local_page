@@ -1,5 +1,53 @@
 # CHANGELOG
 
+## [1.0.10+uai.4] - 2026-09-22
+
+What a category page may contain, and who may put it in front of the open web. Site-wide pages are
+untouched in every respect: they keep upstream's trusted, uncleaned rendering, their raw Content
+HTML block and their `<head>` field, byte for byte.
+
+### Added
+- **Category pages follow core's trusttext rules.** `{local_page}` gains `contenttrust`, written on
+  every save from `trusttext_trusted()` at the page's own context — `$CFG->enabletrusttext` on AND
+  the author holding `moodle/site:trustcontent` there. A category author may write raw HTML; whether
+  it survives is core's decision, not this plugin's, and it is taken about the person who **wrote**
+  the markup rather than the person reading it later. Two consequences worth stating: the setting is
+  off by default on every Moodle site, so until an administrator turns it on every category page is
+  cleaned whoever wrote it; and `$CFG->forceclean` overrides everything, site-wide pages included.
+- **Trust is honoured on the way back into the editor too**, through core's own
+  `trusttext_pre_edit()`. Without that half the other half undoes itself: an untrusted editor opens
+  a page a trusted colleague wrote, the script the viewer never sees arrives in their form, and
+  saving it unchanged carries it across the trust boundary.
+- **`local/page:publishcategorypages` is now read.** Declared in the previous release and enforced
+  from this one: a category page saved by somebody who does not hold it at that category is stored
+  with `onlyloggedin = 1`, whatever was posted.
+- `tests/trust_test.php` for the five new library functions, three form tests, a lockstep assertion
+  over the two language packs, and six more entries in `mutations/gates.conf`.
+
+### Changed
+- **The Content HTML block of a category page is no longer raw.** It goes through the same
+  `format_text()` call as the editor content, so it is cleaned on the same terms and filtered as
+  well. In a category there is no second, unfiltered channel; on a site-wide page the block is
+  concatenated exactly as before.
+- **The per-page `<head>` field is system scope only.** The form omits it for a category, the save
+  path never writes it there, and a row that holds one from elsewhere is ignored rather than
+  emitted. Everything else a page stores is body HTML, which `clean_text()` can judge; a `<head>`
+  fragment can carry a script element, a meta refresh or a base tag, and no sanitiser is written
+  for that.
+- **The "Only logged in" select is frozen at Yes** for a category editor without the publishing
+  capability, with a line saying why. The freeze is explanation, not enforcement — a frozen select
+  stops nothing that is posted by hand, which is why the save path corrects the record regardless.
+- The editor of a category page declares `trusttext` instead of `noclean`; a site-wide page keeps
+  `noclean`.
+
+### Security
+- **The split matters most on a site running `forcelogin` off.** A category page reaches anonymous
+  visitors, so "may author a programme's pages" and "may publish to the open web" are different
+  powers and are now different capabilities — a delegated author can no longer put a page in front
+  of the internet by leaving a select at its default. And because that page is public, the HTML in
+  it is cleaned unless the site has deliberately said otherwise, twice: once by enabling trusttext
+  at all, and once by granting `moodle/site:trustcontent` in that category.
+
 ## [1.0.10+uai.3] - 2026-09-22
 
 The data model learns where a page lives. Nothing an author can see changes yet: no screen offers

@@ -147,7 +147,14 @@ if (!$canview) {
     $headseo .= html_writer::empty_tag('meta', ['property' => 'og:title', 'content' => $custompage->pagename]) . "\n";
     $headseo .= html_writer::empty_tag('meta', ['property' => 'og:url', 'content' => $canonicalurl->out(false)]) . "\n";
 
-    $additionalhead = get_config('local_page', 'additionalhead') ? (string) $custompage->meta : '';
+    /*
+     * The per-page <head> HTML, which local_page_head_html() withholds unless the site setting is
+     * on AND the page is a site-wide one: no sanitiser exists for head markup, so the field is
+     * never offered to a category author and a stored value is ignored rather than emitted. The
+     * decision lives in lib.php because this file is a script, and a guard only a script reaches
+     * is a guard no test holds.
+     */
+    $additionalhead = local_page_head_html($custompage);
     $CFG->additionalhtmlhead = $existinghead . $headseo . $additionalhead;
 
     if ($custompage->hidetitle == 'no') {

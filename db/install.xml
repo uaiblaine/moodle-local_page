@@ -23,6 +23,7 @@
                 <FIELD NAME="hidetitle" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="no" SEQUENCE="false" COMMENT="Flag to indicate if the title of the page should be hidden" />
                 <FIELD NAME="onlyloggedin" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Flag to indicate if the page is only visible to logged in users" />
                 <FIELD NAME="contenthtml" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Raw HTML content for the page" />
+                <FIELD NAME="contenttrust" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Whether the author of the stored pagecontent and contenthtml was trusted with unclean HTML at save time, in the sense of core trusttext; one flag for both fields because both are written by the same author in the same save" />
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id" />

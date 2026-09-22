@@ -243,4 +243,40 @@ final class scope_test extends \advanced_testcase {
             );
         }
     }
+
+    /**
+     * The two language packs carry exactly the same keys.
+     *
+     * The fleet rule is that lang/en and lang/pt_br are updated in the same commit, and nothing in
+     * any pipeline checks it: phpcs reads the ordering of each file on its own and never compares
+     * the two. A key added to one and forgotten in the other surfaces as an English word in the
+     * middle of a Portuguese screen, or — for a key only pt_br has — as a string nobody will ever
+     * see, and both go unnoticed for as long as nobody looks.
+     *
+     * It sits beside the capability-string test above because that one is the same kind of check:
+     * a cross-file assertion about the language pack, made where the file that needs it lives.
+     *
+     * @return void
+     */
+    public function test_the_two_language_packs_carry_the_same_keys(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        $string = [];
+        require($CFG->dirroot . '/local/page/lang/en/local_page.php');
+        $en = array_keys($string);
+
+        $string = [];
+        require($CFG->dirroot . '/local/page/lang/pt_br/local_page.php');
+        $ptbr = array_keys($string);
+
+        // Control: both files really did define something, so two empty lists cannot pass.
+        $this->assertNotEmpty($en);
+        $this->assertNotEmpty($ptbr);
+
+        sort($en);
+        sort($ptbr);
+        $this->assertSame($en, $ptbr, 'lang/en and lang/pt_br are out of lockstep');
+    }
 }
