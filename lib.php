@@ -68,6 +68,107 @@ function local_page_ogimage_filemanager_options(): array {
 }
 
 /**
+ * Whether $now falls inside a page's publish window.
+ *
+ * A bound of 0 (or missing) means "no bound", so a row with neither date set is always inside its
+ * window. This is the four-branch arithmetic local_page_user_can_view_page() used to carry inline,
+ * lifted out unchanged: both that predicate and local_page_ogimage_is_servable() call it, so the
+ * public page and its Open Graph image cannot come to disagree about when a page is published.
+ *
+ * Note it answers about the WINDOW only. Status, access level and onlyloggedin are each caller's
+ * business, and they differ between the two callers on purpose.
+ *
+ * @param object $page Row from {local_page} (stdClass) or an object exposing pagedate and enddate
+ * @param int $now Unix timestamp to test the window against
+ * @return bool
+ */
+function local_page_publish_window_is_open(object $page, int $now): bool {
+    $start = (int) ($page->pagedate ?? 0);
+    $end = (int) ($page->enddate ?? 0);
+
+    if ($start > 0 && $start > $now) {
+        return false;
+    }
+    if ($end > 0 && $end < $now) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Whether a page's Open Graph image may be served, to anybody, through pluginfile.php.
+ *
+ * True only for a persisted, not soft-deleted, 'live' row that is inside its publish window.
+ *
+ * It deliberately consults NEITHER accesslevel NOR onlyloggedin NOR any capability, which is the
+ * whole difference between this predicate and local_page_user_can_view_page(). An og:image URL is
+ * fetched by a scraper — a link preview in a chat client, a crawler, a social network — and that
+ * fetch is anonymous and carries no Moodle session, so gating the image on a viewer's capabilities
+ * would break every preview rather than protect anything. Nothing is leaked by the difference: the
+ * og:image meta tag is emitted by index.php only after the viewer has passed
+ * local_page_user_can_view_page(), so a visitor who may not read an onlyloggedin or capability
+ * restricted page is never handed the image URL in the first place. What this gate DOES enforce is
+ * the part a scraper must not be able to walk around: a draft, archived, expired, not-yet-started
+ * or deleted page has no published image, whoever asks.
+ *
+ * @param object $page Row from {local_page} (stdClass)
+ * @return bool
+ */
+function local_page_ogimage_is_servable(object $page): bool {
+    if ((int) ($page->id ?? 0) <= 0) {
+        return false;
+    }
+
+    if ((int) ($page->deleted ?? 0) !== 0) {
+        return false;
+    }
+
+    if (($page->status ?? '') !== 'live') {
+        return false;
+    }
+
+    return local_page_publish_window_is_open($page, time());
+}
+
+/**
+ * Loads the page a write is about and checks the caller may edit it.
+ *
+ * For a positive id the row is read with deleted = 0 and a missing or soft-deleted row raises
+ * pagenotfound, so a delete that landed between rendering the edit form and posting it cannot be
+ * resurrected by replaying the form. For an id of 0 or less — a new page — there is no row to read
+ * and only the capability is checked.
+ *
+ * The capability is checked at the system context because every {local_page} row lives there today.
+ * Stage 2 gives pages a context of their own and re-derives the context from the returned row; the
+ * row is returned rather than a bare bool precisely so that change stays inside this function.
+ *
+ * @param int $pageid Page id as posted, or 0 for a new page
+ * @return \stdClass|null The stored row, or null when creating a new page
+ * @throws \moodle_exception When the id names no live page
+ * @throws \required_capability_exception When the caller may not edit pages
+ */
+function local_page_require_editable_page(int $pageid): ?\stdClass {
+    global $DB;
+
+    $context = context_system::instance();
+
+    if ($pageid <= 0) {
+        require_capability('local/page:addpages', $context);
+        return null;
+    }
+
+    $row = $DB->get_record('local_page', ['id' => $pageid, 'deleted' => 0]);
+    if (!$row) {
+        throw new \moodle_exception('pagenotfound', 'local_page');
+    }
+
+    require_capability('local/page:addpages', $context);
+
+    return $row;
+}
+
+/**
  * Whether the current user may view a local page under the same rules as the public renderer.
  *
  * Mirrors local_page_renderer::showpage() access checks (status, dates, onlyloggedin, accesslevel,
@@ -125,16 +226,12 @@ function local_page_user_can_view_page(object $page): bool {
         return $canaccess && $permissions;
     }
 
-    $now = time();
-    if ($page->pagedate > 0 && $page->enddate > 0) {
-        $istimevalid = $page->pagedate <= $now && $page->enddate >= $now && $page->status === 'live' && $permissions;
-    } else if ($page->pagedate > 0 && $page->enddate <= 0) {
-        $istimevalid = $page->pagedate <= $now && $page->status === 'live' && $permissions;
-    } else if ($page->pagedate <= 0 && $page->enddate > 0) {
-        $istimevalid = $page->enddate >= $now && $page->status === 'live' && $permissions;
-    } else {
-        $istimevalid = $page->status === 'live' ? $permissions : false;
-    }
+    /*
+     * The four-branch window arithmetic that stood here moved into
+     * local_page_publish_window_is_open() unchanged, so that the og:image gate reads the publish
+     * window through the same code this predicate does and the two cannot drift apart.
+     */
+    $istimevalid = local_page_publish_window_is_open($page, time()) && $page->status === 'live' && $permissions;
 
     return $canaccess && $istimevalid;
 }
@@ -279,6 +376,7 @@ function local_page_user_can_serve_pagecontent_file(int $contextid, string $file
  * @return bool false if the file not found, just send the file otherwise and do not return anything
  */
 function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $args, $forcedownload, array $options = []) {
+    global $DB;
 
     // Check the contextlevel is as expected for local plugins.
     if ($context->contextlevel != CONTEXT_SYSTEM) {
@@ -339,6 +437,18 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
     } else if ($filearea === 'ogimage') {
         // For ogimage, we expect the itemid to be in the args.
         $itemid = array_shift($args); // Get the item ID for the Open Graph image.
+
+        /*
+         * The ogimage itemid is the page id, so the row it belongs to decides whether the image is
+         * published. Without this lookup the area was world-readable by itemid: the image of a
+         * draft, archived, expired or deleted page was served to anyone who guessed the number.
+         * The gate is publication state only, never accesslevel or onlyloggedin — see
+         * local_page_ogimage_is_servable() for why.
+         */
+        $ogimagepage = $DB->get_record('local_page', ['id' => (int) $itemid]);
+        if (!$ogimagepage || !local_page_ogimage_is_servable($ogimagepage)) {
+            return false;
+        }
 
         // Construct the file path (ogimages are typically stored in root path).
         $filepath = '/';

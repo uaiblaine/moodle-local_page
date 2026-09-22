@@ -206,13 +206,23 @@ class local_page_renderer extends plugin_renderer_base {
      * @param bool $page
      */
     public function save_page($page = false) {
-        global $CFG;
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/local/page/lib.php');
         $mform = new pages_edit_product_form($page);
         if ($mform->is_cancelled()) {
             redirect(new moodle_url($CFG->wwwroot . '/local/page/pages.php'));
         } else if ($data = $mform->get_data()) {
             require_once($CFG->libdir . '/formslib.php');
             $context = context_system::instance();
+
+            /*
+             * Re-check the posted id before anything is written. The form was rendered under a
+             * capability check, but the id travels in a hidden field and the row may have been
+             * deleted in between, so the write path has to establish for itself that the target
+             * exists and that this caller may edit it. The row it returns is what the id below is
+             * taken from — never the posted value.
+             */
+            $editable = local_page_require_editable_page((int) $data->id);
             $draftitemid = file_get_submitted_draft_itemid('pagecontent');
             $pagecontenttext = '';
             if (isset($data->pagecontent) && is_array($data->pagecontent) && array_key_exists('text', $data->pagecontent)) {
@@ -232,7 +242,7 @@ class local_page_renderer extends plugin_renderer_base {
             $data->pagedata = '';
 
             $recordpage = new stdClass();
-            $recordpage->id = $data->id;
+            $recordpage->id = $editable === null ? 0 : (int) $editable->id;
             $recordpage->pagename = $data->pagename;
             if (get_config('local_page', 'additionalhead')) {
                 $recordpage->meta = $data->meta;
@@ -252,7 +262,42 @@ class local_page_renderer extends plugin_renderer_base {
             $recordpage->contenthtml = $data->contenthtml;
 
             $recordpage->pagecontent = $savedpagecontent;
-            $result = $page->update($recordpage);
+
+            /*
+             * The uniqueness of a friendly URL is decided by a read followed by a write, so two
+             * editors saving the same slug at the same moment would both pass the form's check and
+             * both store it. Serialise the whole write on one named lock and re-read inside it.
+             * A lock we cannot take within the timeout means another save is in flight, which is
+             * the same situation as losing the race, so it is reported the same way.
+             */
+            $lockfactory = \core\lock\lock_config::get_lock_factory('local_page');
+            $lock = $lockfactory->get_lock('menuname', 10);
+            if (!$lock) {
+                throw new \moodle_exception('menuname_taken', 'local_page');
+            }
+
+            try {
+                if (
+                    $recordpage->menuname !== ''
+                    && \local_page\local\slug::is_taken($recordpage->menuname, (int) $recordpage->id)
+                ) {
+                    throw new \moodle_exception('menuname_taken', 'local_page');
+                }
+
+                $result = $page->update($recordpage);
+
+                /*
+                 * A page saved with no slug would be reachable only by id, and normalise_all()
+                 * would name it at the next upgrade rather than now. Name it here instead, so that
+                 * every page is addressable from the moment it exists.
+                 */
+                if ($result && $result > 0 && $recordpage->menuname === '') {
+                    $DB->set_field('local_page', 'menuname', 'page-' . (int) $result, ['id' => (int) $result]);
+                }
+            } finally {
+                $lock->release();
+            }
+
             if ($result && $result > 0) {
                 $options = local_page_ogimage_filemanager_options();
                 if (isset($data->ogimage_filemanager)) {

@@ -58,6 +58,10 @@ require_once($CFG->dirroot . '/local/page/lib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 #[CoversFunction('local_page_user_can_view_page')]
+#[CoversFunction('local_page_publish_window_is_open')]
+#[CoversFunction('local_page_ogimage_is_servable')]
+#[CoversFunction('local_page_require_editable_page')]
+#[CoversFunction('local_page_pluginfile')]
 final class lib_test extends \advanced_testcase {
     /**
      * The plugin's own data generator.
@@ -420,5 +424,291 @@ final class lib_test extends \advanced_testcase {
         $positive = $this->pages()->create_page(['accesslevel' => 'moodle/site:config']);
         $this->setUser(null);
         $this->assertFalse(\local_page_user_can_view_page($positive), 'anonymous, positive entry');
+    }
+
+    /**
+     * Stores one file in the ogimage area under a page's id.
+     *
+     * @param int $pageid Page id, which is the itemid of the ogimage area.
+     * @param string $filename File name to store.
+     * @return void
+     */
+    private function store_ogimage(int $pageid, string $filename): void {
+        get_file_storage()->create_file_from_string(
+            [
+                'contextid' => \context_system::instance()->id,
+                'component' => 'local_page',
+                'filearea' => 'ogimage',
+                'itemid' => $pageid,
+                'filepath' => '/',
+                'filename' => $filename,
+            ],
+            'not really a png'
+        );
+    }
+
+    /**
+     * Publication states and whether the og:image of such a page may be served.
+     *
+     * A date offset of 0 leaves the field at 0, which means "no bound"; any other value is an
+     * offset from now.
+     *
+     * @return array[] status, pagedate offset, enddate offset, deleted flag, expected result.
+     */
+    public static function ogimage_servability_provider(): array {
+        return [
+            'live, no window' => ['live', 0, 0, 0, true],
+            'live, inside its window' => ['live', -HOURSECS, HOURSECS, 0, true],
+            'draft' => ['draft', 0, 0, 0, false],
+            'archived' => ['archived', 0, 0, 0, false],
+            'deleted' => ['live', 0, 0, 1, false],
+            'not yet started' => ['live', HOURSECS, 0, 0, false],
+            'expired' => ['live', 0, -HOURSECS, 0, false],
+            'draft inside a window' => ['draft', -HOURSECS, HOURSECS, 0, false],
+        ];
+    }
+
+    /**
+     * The og:image gate answers the same to an anonymous scraper and to an administrator.
+     *
+     * The anonymous leg runs under forcelogin, which is the state a link-preview fetch actually
+     * arrives in on a closed site, and which makes every has_capability() call answer false. The
+     * two legs must agree, because the gate is not supposed to read a capability at all.
+     *
+     * @param string $status Stored status value.
+     * @param int $startoffset Offset from now for pagedate, or 0 for no bound.
+     * @param int $endoffset Offset from now for enddate, or 0 for no bound.
+     * @param int $deleted Soft-delete flag.
+     * @param bool $expected Whether the image should be servable.
+     * @return void
+     */
+    #[DataProvider('ogimage_servability_provider')]
+    public function test_ogimage_servability_by_publication_state(
+        string $status,
+        int $startoffset,
+        int $endoffset,
+        int $deleted,
+        bool $expected
+    ): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        $now = time();
+        $page = $this->pages()->create_page([
+            'status' => $status,
+            'pagedate' => $startoffset === 0 ? 0 : $now + $startoffset,
+            'enddate' => $endoffset === 0 ? 0 : $now + $endoffset,
+            'deleted' => $deleted,
+        ]);
+
+        $CFG->forcelogin = 1;
+        $this->setUser(null);
+        $this->assertSame($expected, \local_page_ogimage_is_servable($page), 'anonymous under forcelogin');
+
+        $CFG->forcelogin = 0;
+        $this->setAdminUser();
+        $this->assertSame($expected, \local_page_ogimage_is_servable($page), 'administrator');
+    }
+
+    /**
+     * A row that was never persisted has no servable image.
+     *
+     * @return void
+     */
+    public function test_ogimage_servability_needs_a_persisted_row(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $page = $this->pages()->create_page();
+
+        // Control: the very same row IS servable while it carries its id.
+        $this->assertTrue(\local_page_ogimage_is_servable($page));
+
+        $unsaved = clone $page;
+        $unsaved->id = 0;
+        $this->assertFalse(\local_page_ogimage_is_servable($unsaved));
+    }
+
+    /**
+     * Restrictions on the READER leave the image servable; the viewer predicate is the control.
+     *
+     * This is the difference the gate exists to express. A scraper fetching an og:image is
+     * anonymous, so gating the image on onlyloggedin or on a capability would break every link
+     * preview; and it would protect nothing, because index.php emits the og:image tag only after
+     * the viewer has passed local_page_user_can_view_page(). The control asserts exactly that: the
+     * same rows are refused by the viewer predicate to the same anonymous visitor.
+     *
+     * @return void
+     */
+    public function test_the_ogimage_gate_ignores_restrictions_on_the_reader(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        $restricted = [
+            'logged in only' => $this->pages()->create_page(['onlyloggedin' => 1]),
+            'capability restricted' => $this->pages()->create_page(['accesslevel' => 'moodle/site:config']),
+        ];
+
+        $CFG->forcelogin = 1;
+        $this->setUser(null);
+
+        foreach ($restricted as $label => $page) {
+            $this->assertTrue(\local_page_ogimage_is_servable($page), "ogimage: {$label}");
+            // Control: the reader-facing predicate refuses this very row to this very visitor.
+            $this->assertFalse(\local_page_user_can_view_page($page), "viewer: {$label}");
+        }
+    }
+
+    /**
+     * pluginfile.php will not hand out the og:image of a page that is not published.
+     *
+     * The refusal is asserted rather than the positive serve on purpose: serving a file reaches
+     * readfile_accel(), whose `while (ob_get_level())` loop closes every output buffer there is —
+     * PHPUnit's included — before writing the bytes to stdout. So the positive direction is held
+     * by the predicate tests above, and the control here is that the file really is in the area.
+     *
+     * @return void
+     */
+    public function test_the_ogimage_pluginfile_branch_refuses_unpublished_pages(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $context = \context_system::instance();
+        $fs = get_file_storage();
+
+        $refused = [
+            'draft' => $this->pages()->create_page(['status' => 'draft']),
+            'archived' => $this->pages()->create_page(['status' => 'archived']),
+            'deleted' => $this->pages()->create_page(['deleted' => 1]),
+            'expired' => $this->pages()->create_page(['enddate' => time() - DAYSECS]),
+        ];
+
+        foreach ($refused as $label => $page) {
+            $this->store_ogimage((int) $page->id, 'og.png');
+
+            /*
+             * Control: the file really is stored under that itemid, so what the call below runs
+             * into is the servability gate and not a missing file.
+             */
+            $this->assertNotEmpty(
+                $fs->get_file($context->id, 'local_page', 'ogimage', (int) $page->id, '/', 'og.png'),
+                "{$label}: the fixture file is in the area"
+            );
+
+            $this->assertFalse(
+                \local_page_pluginfile(
+                    null,
+                    null,
+                    $context,
+                    'ogimage',
+                    [(int) $page->id, 'og.png'],
+                    false,
+                    ['dontdie' => true]
+                ),
+                "{$label}: pluginfile refuses the image"
+            );
+        }
+
+        // An itemid naming no row at all is refused before the file store is consulted.
+        $this->assertFalse(
+            \local_page_pluginfile(
+                null,
+                null,
+                $context,
+                'ogimage',
+                [(int) $refused['draft']->id + 100000, 'og.png'],
+                false,
+                ['dontdie' => true]
+            ),
+            'unknown itemid'
+        );
+    }
+
+    /**
+     * The write-path re-check hands back the stored row for a holder of the editing capability.
+     *
+     * @return void
+     */
+    public function test_require_editable_page_returns_the_stored_row(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->user_holding('local/page:addpages'));
+
+        $page = $this->pages()->create_page();
+
+        $row = \local_page_require_editable_page((int) $page->id);
+        $this->assertNotNull($row);
+        $this->assertSame((int) $page->id, (int) $row->id);
+
+        // A new page has no row to read, so only the capability is checked.
+        $this->assertNull(\local_page_require_editable_page(0));
+    }
+
+    /**
+     * A missing or soft-deleted id is refused, so a deleted page cannot be edited back to life.
+     *
+     * @return void
+     */
+    public function test_require_editable_page_refuses_a_missing_or_deleted_row(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->user_holding('local/page:addpages'));
+
+        $live = $this->pages()->create_page();
+        $deleted = $this->pages()->create_page(['deleted' => 1]);
+
+        /*
+         * Control: the same call succeeds for a live row in this very session, so the two refusals
+         * below are the row lookup and not the capability check behind it.
+         */
+        $this->assertNotNull(\local_page_require_editable_page((int) $live->id));
+
+        $cases = [
+            'missing' => (int) $live->id + 100000,
+            'deleted' => (int) $deleted->id,
+        ];
+
+        foreach ($cases as $label => $id) {
+            try {
+                \local_page_require_editable_page($id);
+                $this->fail("{$label}: expected the call to throw");
+            } catch (\moodle_exception $e) {
+                $this->assertSame('pagenotfound', $e->errorcode, $label);
+            }
+        }
+    }
+
+    /**
+     * The write-path re-check demands the editing capability, for an existing and a new page alike.
+     *
+     * @return void
+     */
+    public function test_require_editable_page_demands_the_editing_capability(): void {
+        $this->resetAfterTest();
+
+        $page = $this->pages()->create_page();
+
+        /*
+         * Control: a holder gets the row and a null, so what the plain user meets below is the
+         * capability and not something else about the call.
+         */
+        $this->setUser($this->user_holding('local/page:addpages'));
+        $this->assertNotNull(\local_page_require_editable_page((int) $page->id));
+        $this->assertNull(\local_page_require_editable_page(0));
+
+        $this->setUser($this->getDataGenerator()->create_user());
+
+        $refusals = 0;
+        foreach (['existing page' => (int) $page->id, 'new page' => 0] as $label => $id) {
+            try {
+                \local_page_require_editable_page($id);
+            } catch (\required_capability_exception $e) {
+                $refusals++;
+                continue;
+            }
+            $this->fail("{$label}: expected the call to throw");
+        }
+
+        $this->assertSame(2, $refusals);
     }
 }

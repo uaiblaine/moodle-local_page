@@ -60,5 +60,15 @@ function xmldb_local_page_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2025100804, 'local', 'page');
     }
 
+    if ($oldversion < 2026092201) {
+        // Friendly URLs are now unique among pages that have not been deleted, and a deleted page
+        // releases the one it was holding. Existing rows predate both rules, so bring them into
+        // line once: empty slugs are named, duplicates gain their page id, and deleted rows are
+        // mangled. The routine is idempotent, so re-running this step is harmless.
+        \local_page\local\slug::normalise_all();
+
+        upgrade_plugin_savepoint(true, 2026092201, 'local', 'page');
+    }
+
     return true;
 }

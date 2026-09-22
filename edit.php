@@ -51,6 +51,14 @@ $renderer = $PAGE->get_renderer('local_page'); // Get the renderer for the local
 
 // Load the page to edit and save if form submitted.
 $pagetoedit = \local_page\custompage::load($pageid, true); // Load the page to edit.
+
+/*
+ * load(..., true) deliberately skips the deleted filter, so without this guard a soft-deleted page
+ * could still be opened in the editor and saved back into existence. A new page (id 0) is
+ * unaffected: there is no row to read and only the capability is checked.
+ */
+local_page_require_editable_page($pageid);
+
 $renderer->save_page($pagetoedit); // Save the page using the renderer.
 
 // Theme XY Simple Content Builder: only when theme_xy is installed and builder templates exist (hero overlay, snippets).

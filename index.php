@@ -97,8 +97,16 @@ if (!$canview) {
         }
     }
 
+    /*
+     * The og:image tag is only worth emitting when pluginfile.php will actually serve the file:
+     * local_page_ogimage_is_servable() is the gate the file route applies (publication state only,
+     * never the viewer), so an editor previewing a draft gets no tag rather than a tag whose URL
+     * answers 404.
+     */
     $fs = get_file_storage();
-    $files = $fs->get_area_files($context->id, 'local_page', 'ogimage', $custompage->id, 'sortorder', false);
+    $files = local_page_ogimage_is_servable($custompage)
+        ? $fs->get_area_files($context->id, 'local_page', 'ogimage', $custompage->id, 'sortorder', false)
+        : [];
 
     if ($files) {
         $file = reset($files);

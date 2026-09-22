@@ -295,4 +295,69 @@ class pages_edit_product_form extends moodleform {
         $mform->addElement('hidden', 'id', null);
         $mform->setType('id', PARAM_INT); // Set the type for the ID field.
     }
+
+    /**
+     * Server-side validation for the fields whose stored value is a rule rather than text.
+     *
+     * Two of this form's fields are read back as instructions rather than displayed, and neither
+     * had any validation at all: a typo in "Required capability" was stored happily and changed who
+     * could see the page, and a friendly URL could be typed over another page's.
+     *
+     * The access level is parsed exactly the way local_page_user_can_view_page() parses it, so that
+     * what is refused here is what would have been evaluated there. The read side is deliberately
+     * left alone: it must keep answering for rows saved before this form existed.
+     *
+     * @param array $data Submitted values, "fieldname" => value
+     * @param array $files Uploaded files, unused here
+     * @return array Errors keyed by element name, empty when everything is acceptable
+     */
+    public function validation($data, $files) {
+        $errors = parent::validation($data, $files);
+
+        $accesslevel = trim((string) ($data['accesslevel'] ?? ''));
+        if ($accesslevel !== '') {
+            $unknown = null;
+            $positives = 0;
+            $entries = 0;
+
+            foreach (explode(',', $accesslevel) as $entry) {
+                $entry = trim($entry);
+                if ($entry === '') {
+                    continue;
+                }
+                $entries++;
+
+                $negated = substr($entry, 0, 1) === '!';
+                $capability = trim($negated ? substr($entry, 1) : $entry);
+                if (!$negated) {
+                    $positives++;
+                }
+
+                if ($unknown === null && ($capability === '' || get_capability_info($capability) === null)) {
+                    $unknown = $entry;
+                }
+            }
+
+            if ($unknown !== null) {
+                $errors['accesslevel'] = get_string('accesslevel_unknowncapability', 'local_page', $unknown);
+            } else if ($entries > 0 && $positives === 0) {
+                /*
+                 * A list of negations only grants the page to everyone. The predicate starts at
+                 * "no access" and a negated entry flips that to "access" for anyone who does NOT
+                 * hold the capability — which is every anonymous visitor, since administrators were
+                 * already admitted further up. Refusing it here is what closes that hole; the
+                 * predicate keeps reading already-stored rows as it always did.
+                 */
+                $errors['accesslevel'] = get_string('accesslevel_negationonly', 'local_page');
+            }
+        }
+
+        // Compared lower-cased and trimmed because that is the form the renderer stores.
+        $menuname = \core_text::strtolower(trim((string) ($data['menuname'] ?? '')));
+        if ($menuname !== '' && \local_page\local\slug::is_taken($menuname, (int) ($data['id'] ?? 0))) {
+            $errors['menuname'] = get_string('menuname_taken', 'local_page');
+        }
+
+        return $errors;
+    }
 }

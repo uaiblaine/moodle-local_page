@@ -27,6 +27,8 @@
 
 $string['accesslevel'] = 'Required capability';
 $string['accesslevel_help'] = 'Optional comma-separated Moodle capabilities that further restrict who can view this page (in addition to status, dates, and "only logged in"). <strong>Evaluation is left-to-right with OR-style results:</strong> each entry is applied only while access is not yet granted; a plain capability name grants access if the user has that capability; a name prefixed with <strong>!</strong> grants access if the user does <em>not</em> have that capability. Once an entry grants access, remaining entries are ignored—order matters when you mix positive and negated rules. Example: <code>moodle/course:view, !moodle/site:config</code> allows any user with course view who is not a full site administrator. Leave empty for no extra capability gate.';
+$string['accesslevel_negationonly'] = 'The required capability cannot be made up of negated entries only. A rule such as <code>!moodle/site:config</code> grants the page to every visitor who does <em>not</em> hold that capability, anonymous ones included, so it restricts nothing. Add a positive capability alongside the negation, or set "Only logged in" to Yes.';
+$string['accesslevel_unknowncapability'] = 'The capability \'{$a}\' does not exist on this site. Check the spelling and use the full name, such as <code>moodle/site:config</code>.';
 $string['addpage'] = "Add New Page";
 $string['backtolist'] = "Return to Pages List";
 $string['confirmdeletepage'] = 'Are you sure you want to delete the page \'{$a}\'?';
@@ -46,6 +48,7 @@ $string['hidetitle'] = 'Hide Title';
 $string['menu_name'] = 'Friendly URL';
 $string['menu_name_description'] = 'Friendly URL Description';
 $string['menu_name_description_help'] = 'Provide a URL slug for the page (letters, numbers, hyphen, underscore only; invalid characters are removed on save). Web server rewrite rules must map requests such as <strong>about-us</strong> to this plugin\'s viewer if you use root-level URLs.';
+$string['menuname_taken'] = 'This friendly URL is already used by another page. Choose a different one.';
 $string['metaauthor'] = 'Meta Author';
 $string['metaauthor_description'] = 'Meta Author Description';
 $string['metaauthor_description_help'] = 'Provide a meta author for the page. This will be used to identify the author of the page.';
@@ -88,6 +91,7 @@ $string['page_name'] = 'Title of the Page';
 $string['pagedate_description'] = 'Select the date when this page will be published - a future date will restrict access until that date.';
 $string['pagedate_description_help'] = 'Select the date for publishing this page - access will be restricted until the specified date.';
 $string['pagename_placeholder'] = 'Enter the page name';
+$string['pagenotfound'] = 'The requested page does not exist or has been deleted.';
 $string['pagesetup_heading'] = 'Page Setup Heading';
 $string['pagesetup_title'] = 'Page Setup Title';
 $string['pluginname'] = 'Custom Pages';
