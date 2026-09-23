@@ -28,6 +28,8 @@
 // Strings for the settings page.
 $string['accesslevel'] = 'Required capability';
 $string['accesslevel_help'] = 'Optional comma-separated Moodle capabilities that further restrict who can view this page (in addition to status, dates, and "only logged in"). <strong>Evaluation is left-to-right with OR-style results:</strong> each entry is applied only while access is not yet granted; a plain capability name grants access if the user has that capability; a name prefixed with <strong>!</strong> grants access if the user does <em>not</em> have that capability. Once an entry grants access, remaining entries are ignored—order matters when you mix positive and negated rules. Example: <code>moodle/course:view, !moodle/site:config</code> allows any user with course view who is not a full site administrator. Leave empty for no extra capability gate.';
+$string['accesslevel_negationonly'] = 'The required capability cannot be made up of negated entries only. An entry such as "!moodle/site:config" grants the page to every visitor who does not hold that capability, anonymous visitors included, so a list of negations alone restricts nothing.';
+$string['accesslevel_unknowncapability'] = 'The capability "{$a}" does not exist on this site. Check the spelling and use the full name, such as "moodle/site:config".';
 $string['addpage'] = "Add New Page";
 $string['addpages'] = "Add Multiple Pages";
 $string['backtolist'] = "Return to Pages List";

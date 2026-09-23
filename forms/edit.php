@@ -295,4 +295,54 @@ class pages_edit_product_form extends moodleform {
         $mform->addElement('hidden', 'id', null);
         $mform->setType('id', PARAM_INT); // Set the type for the ID field.
     }
+
+    /**
+     * Server-side validation of the fields whose stored value is a rule rather than text.
+     *
+     * The access level is read back by local_page_user_can_view_page() as a capability rule, and is split
+     * here the same way. A capability the site does not define is refused: has_capability() answers false
+     * for it, so a misspelt entry silently locks everybody out, or, negated, lets everybody in. A list made
+     * only of negated entries is refused too: each one grants the page to every visitor who does not hold
+     * the capability, anonymous ones included, so on its own it restricts nothing.
+     *
+     * @param array $data Submitted values, "fieldname" => value
+     * @param array $files Uploaded files
+     * @return array Errors keyed by element name, empty when everything is acceptable
+     */
+    public function validation($data, $files) {
+        $errors = parent::validation($data, $files);
+
+        $accesslevel = trim((string) ($data['accesslevel'] ?? ''));
+        if ($accesslevel !== '') {
+            $unknown = null;
+            $entries = 0;
+            $positives = 0;
+
+            foreach (explode(',', $accesslevel) as $entry) {
+                $entry = trim($entry);
+                if ($entry === '') {
+                    continue;
+                }
+                $entries++;
+
+                $negated = strpos($entry, '!') !== false;
+                if (!$negated) {
+                    $positives++;
+                }
+
+                $capability = trim(str_replace('!', '', $entry));
+                if ($unknown === null && ($capability === '' || get_capability_info($capability) === null)) {
+                    $unknown = $entry;
+                }
+            }
+
+            if ($unknown !== null) {
+                $errors['accesslevel'] = get_string('accesslevel_unknowncapability', 'local_page', $unknown);
+            } else if ($entries > 0 && $positives === 0) {
+                $errors['accesslevel'] = get_string('accesslevel_negationonly', 'local_page');
+            }
+        }
+
+        return $errors;
+    }
 }
