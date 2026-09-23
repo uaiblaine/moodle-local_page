@@ -123,6 +123,37 @@ function local_page_ogimage_is_servable(object $page): bool {
 }
 
 /**
+ * Checks the caller may edit pages and loads the page a write is about.
+ *
+ * The page id of the edit form travels in a hidden field, so the write path cannot take it on trust.
+ * For a positive id the row is read with deleted = 0, and a missing or deleted row raises pagenotfound:
+ * a page deleted after the form was rendered is not written to, and an id that names no page does not
+ * reach the save (nor the Open Graph image, which is stored under the page id). For an id of 0 or less,
+ * a new page, there is no row to read and only the capability is checked.
+ *
+ * @param int $pageid Page id as posted, or 0 for a new page
+ * @return stdClass|null The stored row, or null for a new page
+ * @throws required_capability_exception When the caller may not edit pages
+ * @throws moodle_exception When the id names no page, or a deleted one
+ */
+function local_page_require_editable_page(int $pageid): ?stdClass {
+    global $DB;
+
+    require_capability('local/page:addpages', context_system::instance());
+
+    if ($pageid <= 0) {
+        return null;
+    }
+
+    $page = $DB->get_record('local_page', ['id' => $pageid, 'deleted' => 0]);
+    if (!$page) {
+        throw new moodle_exception('pagenotfound', 'local_page');
+    }
+
+    return $page;
+}
+
+/**
  * Whether the current user may view a local page under the same rules as the public renderer.
  *
  * Mirrors local_page_renderer::showpage() access checks (status, dates, onlyloggedin, accesslevel,

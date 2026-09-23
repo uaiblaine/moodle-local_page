@@ -122,6 +122,7 @@ $string['pagedate'] = "Page Publication Date";
 $string['pagedate_description'] = 'Select the date when this page will be published - a future date will restrict access until that date.';
 $string['pagedate_description_help'] = 'Select the date for publishing this page - access will be restricted until the specified date.';
 $string['pagename_placeholder'] = 'Enter the page name';
+$string['pagenotfound'] = 'The requested page does not exist or has been deleted.';
 $string['pagesetup_heading'] = 'Page Setup Heading';
 $string['pagesetup_title'] = 'Page Setup Title';
 $string['pdfmanual'] = "PDF User Manual";

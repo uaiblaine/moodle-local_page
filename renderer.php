@@ -213,6 +213,10 @@ class local_page_renderer extends plugin_renderer_base {
         } else if ($data = $mform->get_data()) {
             require_once($CFG->libdir . '/formslib.php');
             $context = context_system::instance();
+
+            // The id is a posted hidden field: re-read the row it names (not deleted) and write to that id only.
+            $editable = local_page_require_editable_page((int) $data->id);
+
             $draftitemid = file_get_submitted_draft_itemid('pagecontent');
             $pagecontenttext = '';
             if (isset($data->pagecontent) && is_array($data->pagecontent) && array_key_exists('text', $data->pagecontent)) {
@@ -232,7 +236,7 @@ class local_page_renderer extends plugin_renderer_base {
             $data->pagedata = '';
 
             $recordpage = new stdClass();
-            $recordpage->id = $data->id;
+            $recordpage->id = $editable === null ? 0 : (int) $editable->id;
             $recordpage->pagename = $data->pagename;
             if (get_config('local_page', 'additionalhead')) {
                 $recordpage->meta = $data->meta;

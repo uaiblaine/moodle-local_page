@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Tests for the access and publication rules in local/page/lib.php.
+ * Tests for the access, publication and write-path rules in local/page/lib.php.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -32,7 +32,7 @@ global $CFG;
 require_once($CFG->dirroot . '/local/page/lib.php');
 
 /**
- * Tests for the access and publication rules in local/page/lib.php.
+ * Tests for the access, publication and write-path rules in local/page/lib.php.
  *
  * Test cases are looped inside the methods rather than fed by data providers, so the file runs
  * unchanged under the PHPUnit of every Moodle version the plugin supports.
@@ -44,6 +44,7 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 #[CoversFunction('local_page_publish_window_is_open')]
 #[CoversFunction('local_page_ogimage_is_servable')]
 #[CoversFunction('local_page_pluginfile')]
+#[CoversFunction('local_page_require_editable_page')]
 final class lib_test extends \advanced_testcase {
     /**
      * The plugin's data generator.
@@ -52,6 +53,22 @@ final class lib_test extends \advanced_testcase {
      */
     private function pages(): \local_page_generator {
         return $this->getDataGenerator()->get_plugin_generator('local_page');
+    }
+
+    /**
+     * A new user holding one capability at the system context.
+     *
+     * @param string $capability Capability name
+     * @return \stdClass The user
+     */
+    private function user_holding(string $capability): \stdClass {
+        $user = $this->getDataGenerator()->create_user();
+        $roleid = $this->getDataGenerator()->create_role();
+        assign_capability($capability, CAP_ALLOW, $roleid, \context_system::instance()->id);
+        role_assign($roleid, $user->id, \context_system::instance()->id);
+        accesslib_clear_all_caches_for_unit_testing();
+
+        return $user;
     }
 
     /**
@@ -225,5 +242,74 @@ final class lib_test extends \advanced_testcase {
 
         // An item id that names no page is refused as well.
         $this->assertFalse($this->ask_ogimage_route([$page->id + 1000, 'og.png'], $png));
+    }
+
+    /**
+     * The write-path check hands back the stored row, and null for a new page.
+     *
+     * @return void
+     */
+    public function test_require_editable_page_returns_the_stored_row(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->user_holding('local/page:addpages'));
+
+        $page = $this->pages()->create_page();
+
+        $row = local_page_require_editable_page($page->id);
+        $this->assertSame($page->id, (int) $row->id);
+        $this->assertSame($page->pagename, $row->pagename);
+
+        $this->assertNull(local_page_require_editable_page(0));
+    }
+
+    /**
+     * An id naming no page, or a deleted one, is refused.
+     *
+     * @return void
+     */
+    public function test_require_editable_page_refuses_a_missing_or_deleted_page(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->user_holding('local/page:addpages'));
+
+        $live = $this->pages()->create_page();
+        $deleted = $this->pages()->create_page(['deleted' => 1]);
+
+        // Control: the live row is returned to the same user, so the refusals below are the row lookup.
+        $this->assertNotNull(local_page_require_editable_page($live->id));
+
+        foreach (['missing' => $live->id + 1000, 'deleted' => $deleted->id] as $label => $id) {
+            try {
+                local_page_require_editable_page($id);
+                $this->fail("{$label}: expected an exception");
+            } catch (\moodle_exception $e) {
+                $this->assertSame('pagenotfound', $e->errorcode, $label);
+            }
+        }
+    }
+
+    /**
+     * The write-path check demands local/page:addpages, for an existing page and a new one alike.
+     *
+     * @return void
+     */
+    public function test_require_editable_page_demands_the_editing_capability(): void {
+        $this->resetAfterTest();
+
+        $page = $this->pages()->create_page();
+        $this->setUser($this->getDataGenerator()->create_user());
+
+        foreach (['existing page' => $page->id, 'new page' => 0] as $label => $id) {
+            try {
+                local_page_require_editable_page($id);
+                $this->fail("{$label}: expected an exception");
+            } catch (\required_capability_exception $e) {
+                $this->assertSame('nopermissions', $e->errorcode, $label);
+            }
+        }
+
+        // Control: the same two calls pass for a holder of the capability.
+        $this->setUser($this->user_holding('local/page:addpages'));
+        $this->assertNotNull(local_page_require_editable_page($page->id));
+        $this->assertNull(local_page_require_editable_page(0));
     }
 }

@@ -46,6 +46,9 @@ $PAGE->set_heading(get_string('pluginname', 'local_page')); // Set the page head
 require_login(); // Ensure the user is logged in.
 require_capability('local/page:addpages', $context); // Check if the user has the capability to add pages.
 
+// Refuse an id naming no page or a deleted one: custompage::load($pageid, true) below would load either.
+local_page_require_editable_page($pageid);
+
 // Get the renderer for this page.
 $renderer = $PAGE->get_renderer('local_page'); // Get the renderer for the local_page plugin.
 
