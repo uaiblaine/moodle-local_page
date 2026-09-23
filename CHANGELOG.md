@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## [1.0.10+uai.7] - 2026-09-22
+
+The addresses of category pages. A category page answered only at the script's
+`?category=N&page=slug` address; from this release it has a routed address and a public short address
+as well, and every address the plugin prints, stores or redirects to is spelled in one place. Site-wide
+pages are untouched: their addresses, their canonical tags and what every viewer sees on them are what
+upstream produced. No schema change and no upgrade step; the plugin writes rows to core's `{shortlink}`
+table and removes them again on delete and on uninstall.
+
+### Added
+- **The routed address `/local_page/category/<category id>/<slug>`**, answered by
+  `\local_page\route\controller\page` on Moodle's routing engine. It makes no decision of its own: it
+  asks `\local_page\local\request::category()`, the call the script makes, and renders the body with
+  `local_page_render_view()`, the function the script renders with. No login requirement on the route,
+  because the page serves visitors of a public category on a site that forces login; plain integer and
+  ALPHANUMEXT parameters, never a category path type, whose not-found before the controller would tell
+  an anonymous client which categories exist.
+- **The public short address `/p/<code>`**, core's own shortlink route. A category page's code is
+  minted by core's `\core\shortlink` manager the first time the page is saved while the router is
+  configured, reused on every later save, and never minted on a GET; `\local_page\shortlink_handler`
+  resolves it to the page's canonical address, and refuses the code of a deleted page.
+- **`\local_page\local\links`, the address builder**: the script's forms, the route (only while
+  `$CFG->routerconfigured` is set, the script otherwise — never the longer `/r.php/` spelling), a page's
+  canonical address, and its short address. It never sets `$CFG->urlrewriteclass`, a single global slot.
+- `local_page_render_view()` in `lib.php`: what `index.php` did after the request's decision, moved so
+  both addresses render the same page.
+- Tests: `tests/local/links_test.php`, `tests/shortlink_handler_test.php`,
+  `tests/shortlink_route_test.php`, `tests/route/controller/page_test.php` and
+  `tests/save_page_test.php`; two Behat scenarios walking the routed address; ten more entries in
+  `mutations/gates.conf`.
+
+### Changed
+- **The legacy script redirects while the router is configured.** Its slug form answers a `303` to
+  the routed address before anything is looked up, for every category and every slug alike. Upstream's
+  `?id=` address answers a `303` for a category page too, but only once the page's rules and the public
+  predicate have let the viewer read it — a visitor the page is withheld from gets the login page, never
+  an address naming the page. The `?category=N&id=M` form has no routed twin and is still served.
+- **A category page's canonical tag, `og:url`, `$PAGE` address and the visitor's way back after
+  logging in are its routed address** where the router is configured, and its script address elsewhere.
+- **A category card on the pages screen shows the page's address**, and its short address once one
+  was minted, labelled "Short address to share". The card's friendly URL is now printed through a
+  double stash instead of upstream's triple one: without the router that address is the script's
+  query string, and its ampersand reached the page unescaped.
+- Upstream's `require_login()` for a page with an access level moved from `index.php` into
+  `local_page_render_view()`, so it applies at the routed address as well.
+
+### Documentation
+- README: the routed address, the short address and what happens without the router; and an optional,
+  unshipped web server alias for category pages (NGINX and Apache), mapped onto the script's query-string
+  address because the router reads the original request URI.
+
 ## [1.0.10+uai.6] - 2026-09-22
 
 The viewer for category pages. A category's pages could be authored since the previous release, and

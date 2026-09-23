@@ -41,12 +41,40 @@ use PHPUnit\Framework\Attributes\CoversClass;
  * redirect() is never reached: under PHPUnit it throws a moodle_exception carrying no URL, which is
  * why the class RETURNS its redirect target and index.php is the one that calls redirect().
  *
+ * Addresses are spelled through \local_page\local\links, which answers the route while
+ * $CFG->routerconfigured is set and the script otherwise. The fleet stacks set it in the PHPUnit
+ * config and the CI matrix does not, so a test whose answer depends on it sets it explicitly; the
+ * others hold on either setting because they compare against the builder.
+ *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 #[CoversClass(request::class)]
 final class request_test extends \advanced_testcase {
+    /**
+     * Leave no router built under this test's setting behind.
+     *
+     * @return void
+     */
+    protected function tearDown(): void {
+        \core\di::reset_container();
+        parent::tearDown();
+    }
+
+    /**
+     * Declare the site's router configured or not; the router memoises its base path when built.
+     *
+     * @param bool $configured Whether the router is configured
+     * @return void
+     */
+    private function set_router(bool $configured): void {
+        global $CFG;
+
+        $CFG->routerconfigured = $configured;
+        \core\di::reset_container();
+    }
+
     /**
      * The plugin's own data generator.
      *
@@ -79,14 +107,14 @@ final class request_test extends \advanced_testcase {
     }
 
     /**
-     * The address of a category's page, as the request class builds it.
+     * The address of a category's page, as the request class builds it: through the builder.
      *
      * @param int $categoryid Course category id
      * @param string $slug Friendly URL within the category
      * @return string
      */
     private function category_address(int $categoryid, string $slug): string {
-        return (new \moodle_url('/local/page/index.php', ['category' => $categoryid, 'page' => $slug]))->out(false);
+        return links::category_page($categoryid, $slug)->out(false);
     }
 
     /**
@@ -384,6 +412,8 @@ final class request_test extends \advanced_testcase {
      */
     public function test_the_legacy_addresses_apply_the_predicate_to_category_pages_only(): void {
         $this->resetAfterTest();
+        // The router off: its control renders a category page on the script, which the router would redirect.
+        $this->set_router(false);
         $categoryid = (int) $this->getDataGenerator()->create_category()->id;
         $categorypage = $this->pages()->create_category_page($categoryid, ['menuname' => 'handbook']);
         $sitepage = $this->pages()->create_page(['menuname' => 'welcome']);
@@ -422,6 +452,8 @@ final class request_test extends \advanced_testcase {
         global $PAGE;
 
         $this->resetAfterTest();
+        // The router off: the legacy id address of a category page renders only while it is.
+        $this->set_router(false);
         $categoryid = (int) $this->getDataGenerator()->create_category()->id;
         $context = \core\context\coursecat::instance($categoryid);
         $page = $this->pages()->create_category_page($categoryid, ['menuname' => 'handbook']);
@@ -451,5 +483,174 @@ final class request_test extends \advanced_testcase {
         request::legacy(0, 'welcome', public_predicate::class);
         $this->assertSame(\context_system::instance()->id, $PAGE->context->id, 'legacy friendly URL: the system context');
         $this->assertSame((new \moodle_url('/welcome'))->out(false), $PAGE->url->out(false));
+    }
+
+    /**
+     * Every answer carries the status it calls for: 200 to render, 302 for the visitor's refusal, 303 to move.
+     *
+     * The route controller sends this status; index.php cannot (core's redirect() always answers 303),
+     * which is why it is a field of the answer and not the controller's own choice.
+     *
+     * @return void
+     */
+    public function test_every_answer_carries_its_status(): void {
+        $this->resetAfterTest();
+        $this->set_router(true);
+        $categoryid = (int) $this->getDataGenerator()->create_category()->id;
+        $this->pages()->create_category_page($categoryid, ['menuname' => 'handbook']);
+        public_predicate::reset([]);
+
+        $this->setUser($this->getDataGenerator()->create_user());
+        $this->assertSame(request::STATUS_OK, request::category($categoryid, 0, 'handbook', public_predicate::class)->status);
+        $moved = request::category($categoryid, 0, 'handbook', public_predicate::class, legacy: true);
+        $this->assertSame(request::STATUS_SEE_OTHER, $moved->status);
+
+        $this->become_visitor();
+        $this->assertSame(request::STATUS_LOGIN, request::category($categoryid, 0, 'handbook', public_predicate::class)->status);
+    }
+
+    /**
+     * A category page's ?id= address sends a reader to its route, and a visitor it is withheld from to log in.
+     *
+     * The 303 spells the page's category and slug, so it is issued only once the page's own rules and
+     * the public predicate have let the viewer read the page. A visitor of a private category must get
+     * the login refusal and never the routed address — handing it to them would tell an anonymous
+     * client what the id names. The draft is the logged-in half of the same rule: the "no access"
+     * page, rendered where it was asked for, not a redirect to the draft's address.
+     *
+     * @return void
+     */
+    public function test_a_category_pages_id_address_moves_a_reader_and_refuses_a_visitor(): void {
+        $this->resetAfterTest();
+        $this->set_router(true);
+        $private = (int) $this->getDataGenerator()->create_category()->id;
+        $public = (int) $this->getDataGenerator()->create_category()->id;
+        $privatepage = $this->pages()->create_category_page($private, ['menuname' => 'handbook']);
+        $publicpage = $this->pages()->create_category_page($public, ['menuname' => 'handbook']);
+        $draft = $this->pages()->create_category_page($private, ['menuname' => 'draft', 'status' => 'draft']);
+        $sitepage = $this->pages()->create_page(['menuname' => 'welcome']);
+        public_predicate::reset([$public]);
+
+        // A visitor of the private category: the refusal, never the route.
+        $this->become_visitor();
+        $refused = request::legacy((int) $privatepage->id, '', public_predicate::class);
+        $this->assert_refused($refused, links::legacy((int) $privatepage->id)->out(false), 'visitor, private category');
+        $this->assertNotSame(links::page($privatepage)->out(false), $refused->redirect->out(false), 'The slug is not leaked.');
+
+        // Control: a visitor the public category's page reaches is moved to the route.
+        $moved = request::legacy((int) $publicpage->id, '', public_predicate::class);
+        $this->assertSame(request::STATUS_SEE_OTHER, $moved->status);
+        $this->assertSame(links::page($publicpage)->out(false), $moved->redirect->out(false));
+        $this->assertStringContainsString("/local_page/category/{$public}/handbook", $moved->redirect->out(false));
+
+        // A logged-in reader of the private category is moved as well; a draft is the "no access" page.
+        $this->setUser($this->getDataGenerator()->create_user());
+        $this->fresh_page();
+        $forreader = request::legacy((int) $privatepage->id, '', public_predicate::class);
+        $this->assertSame(links::page($privatepage)->out(false), $forreader->redirect->out(false));
+        $this->fresh_page();
+        $fordraft = request::legacy((int) $draft->id, '', public_predicate::class);
+        $this->assertNull($fordraft->redirect, 'A draft withheld from the reader is not redirected to.');
+        $this->assertFalse($fordraft->canview);
+
+        // A site-wide page is never moved: it has no route.
+        $this->fresh_page();
+        $forsite = request::legacy((int) $sitepage->id, '', public_predicate::class);
+        $this->assertNull($forsite->redirect);
+        $this->assertTrue($forsite->canview);
+    }
+
+    /**
+     * The legacy script's slug form is moved to the route before anything is looked up, for everybody.
+     *
+     * Zero database statements for a category that exists and for one that does not, for a visitor and
+     * for a logged-in user, and the predicate never asked: the redirect is the same for every id and
+     * every slug, so it tells nobody anything, and the guard order runs where it lands. The controls
+     * are the id form, which has no route and is decided here, and the same slug form with the router
+     * off, which is decided here too — and whose lookup the meter sees.
+     *
+     * @return void
+     */
+    public function test_the_legacy_slug_form_moves_to_the_route_before_any_lookup(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->set_router(true);
+        $categoryid = (int) $this->getDataGenerator()->create_category()->id;
+        $page = $this->pages()->create_category_page($categoryid, ['menuname' => 'handbook']);
+        $missing = (int) $DB->get_field_sql('SELECT MAX(id) FROM {course_categories}') + 1000;
+        $user = $this->getDataGenerator()->create_user();
+
+        // Warm the class loader and the router, so that nothing measured below is a first use.
+        request::category($missing, 0, 'handbook', public_predicate::class, legacy: true);
+
+        foreach (['visitor' => null, 'user' => $user] as $who => $viewer) {
+            $this->setUser($viewer);
+            foreach ([$categoryid, $missing] as $id) {
+                public_predicate::reset([]);
+                $before = $DB->perf_get_reads();
+                $answer = request::category($id, 0, 'handbook', public_predicate::class, legacy: true);
+                $reads = $DB->perf_get_reads() - $before;
+
+                $this->assertSame(0, $reads, "{$who}, category {$id}: no statement before the redirect");
+                $this->assertSame(0, public_predicate::calls(), "{$who}, category {$id}: nobody was asked about");
+                $this->assertSame(request::STATUS_SEE_OTHER, $answer->status);
+                $this->assertSame(links::category_page($id, 'handbook')->out(false), $answer->redirect->out(false));
+                $this->assertNull($answer->page);
+            }
+        }
+
+        // Control: the id form has no route, so it is decided here and renders for the user.
+        $this->fresh_page();
+        $byid = request::category($categoryid, (int) $page->id, '', public_predicate::class, legacy: true);
+        $this->assertNull($byid->redirect, 'The id form is not moved.');
+        $this->assertTrue($byid->canview);
+
+        // Control: with the router off the slug form is decided here, and the meter sees its lookup.
+        $this->set_router(false);
+        $this->fresh_page();
+        $before = $DB->perf_get_reads();
+        $script = request::category($categoryid, 0, 'handbook', public_predicate::class, legacy: true);
+        $this->assertGreaterThan(0, $DB->perf_get_reads() - $before, 'Control: a lookup is counted.');
+        $this->assertNull($script->redirect);
+        $this->assertTrue($script->canview);
+        $this->assertSame(links::legacy_category($categoryid, 'handbook')->out(false), $script->canonical->out(false));
+    }
+
+    /**
+     * The canonical a page is rendered with: upstream's for a site page, the category address for a category page.
+     *
+     * @return void
+     */
+    public function test_the_canonical_address_of_each_kind_of_page(): void {
+        $this->resetAfterTest();
+        $categoryid = (int) $this->getDataGenerator()->create_category()->id;
+        $categorypage = $this->pages()->create_category_page($categoryid, ['menuname' => 'handbook']);
+        $sitepage = $this->pages()->create_page(['menuname' => 'welcome']);
+        $this->setUser($this->getDataGenerator()->create_user());
+
+        // With the router, the route itself: what the head tags and og:url carry.
+        $this->set_router(true);
+        $routed = request::category($categoryid, 0, 'handbook', public_predicate::class);
+        $this->assertSame(links::page($categorypage)->out(false), $routed->canonical->out(false));
+        $this->assertStringContainsString('/local_page/category/', $routed->canonical->out(false));
+
+        // Site-wide pages keep upstream's canonical, byte for byte, router or not.
+        foreach ([false, true] as $configured) {
+            $this->set_router($configured);
+            $this->fresh_page();
+            $bymenuname = request::legacy(0, 'welcome', public_predicate::class);
+            $this->assertSame((new \moodle_url('/welcome'))->out(false), $bymenuname->canonical->out(false));
+            $this->fresh_page();
+            $byid = request::legacy((int) $sitepage->id, '', public_predicate::class);
+            $expected = new \moodle_url('/local/page/index.php', ['id' => (int) $sitepage->id]);
+            $this->assertSame($expected->out(false), $byid->canonical->out(false));
+        }
+
+        // A category page read on the script, the router being off: its category address.
+        $this->set_router(false);
+        $this->fresh_page();
+        $byid = request::legacy((int) $categorypage->id, '', public_predicate::class);
+        $this->assertSame(links::legacy_category($categoryid, 'handbook')->out(false), $byid->canonical->out(false));
     }
 }

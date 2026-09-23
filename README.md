@@ -39,9 +39,30 @@ Site administrators keep the site-wide screen under *Site administration > Plugi
 Custom pages > Manage pages*, which lists the site's own pages and not any category's.
 
 A category page has no `wwwroot/<slug>` friendly URL: that address is the site-wide convention,
-answered by the web server rewrite rules below for site pages only. Its address is
-`/local/page/index.php?category=<category id>&page=<slug>` (or `&id=<page id>`); a routed address
-will be added beside it.
+answered by the web server rewrite rules below for site pages only. Its addresses are:
+
+- **The routed address** `/local_page/category/<category id>/<slug>`, answered by Moodle's routing
+  engine. It is the page's canonical address wherever the site's router is configured
+  (`$CFG->routerconfigured = true`, Moodle 5.1 and later): the one its canonical tag and `og:url`
+  carry, and the one a visitor is brought back to after logging in. The `local_page/` prefix is
+  Moodle's rule for a plugin's routes, not a choice of this plugin. It needs no web server change
+  beyond the router's own fallback to `r.php`.
+- **The public short address** `/p/<code>`, answered by Moodle's own shortlink route and sent on to
+  the routed address. A category page gets its code the first time it is saved while the router is
+  configured, keeps it on every later save, and shows it on its card on the pages screen as
+  **Short address to share**; deleting the page deletes its code. The code names the page, not an
+  address, so it keeps working whatever address the page is served at.
+- **The script's address** `/local/page/index.php?category=<category id>&page=<slug>`, or
+  `&id=<page id>`. It answers on every site. Where the router is configured, the slug form answers
+  with a `303 See Other` to the routed address before anything is looked up — every category and every
+  slug get the same redirect, so it tells nobody anything — and the page's rules are applied where it
+  lands. The id form has no routed twin and is served where it is asked for.
+
+Without the router, nothing is minted and the script's address is the canonical one: the plugin never
+spells a routed address the site does not answer. Upstream's own `?id=<page id>` address still reaches a
+category page; where the router is configured it answers somebody the page's rules let read it with a
+`303` to the routed address, and only then — a visitor the page is withheld from gets the login page,
+never an address that would name the page.
 
 **Visitors.** A visitor — somebody not logged in, or the guest account — may read a category page
 only when the category is **public**, and "public" is not this plugin's decision: it is the public
@@ -105,6 +126,34 @@ Again, prefix with your Moodle base path if not at domain root.
 **Conflicts**: A catch-all slug rule can shadow other single-segment routes. Restrict slugs in the rule, reserve paths, or place this rule after more specific locations.
 
 **Moodle 5.1 and later**: with the routing engine configured (`$CFG->routerconfigured = true`), the server already has a fallback that sends every unmatched path to `public/r.php`. A root-level slug rule must therefore be declared so that it answers *before* that fallback, or the router replies first and the slug never reaches this plugin. On NGINX there is a second ordering rule on top of that one: the server takes the **first matching regex `location` in declaration order**, so a regex slug location must come **after** the `location ~ \.php$` block (or exclude `.php` by pattern). Declared before it, a pattern as broad as `^/([a-zA-Z0-9_-]+)$` swallows `/index.php` and NGINX serves the PHP source instead of executing it.
+
+### Optional: a shorter alias for category pages (not required)
+
+The plugin ships **nothing** for this, and nothing in it depends on it: the routed address and the
+`/p/<code>` short address above need no web server change beyond the router's own fallback, and they
+are the addresses the plugin prints. A site that wants a vanity prefix of its own — `/paginas/12/handbook`,
+say — can map it in the web server onto the script's category address:
+
+```nginx
+# Declared AFTER the `location ~ \.php$` block: NGINX takes the first matching regex location in
+# declaration order, and this one must never capture a PHP script.
+location ~ ^/paginas/(\d+)/([a-z0-9_-]+)$ {
+    rewrite ^/paginas/(\d+)/([a-z0-9_-]+)$ /local/page/index.php?category=$1&page=$2 last;
+}
+```
+
+```apache
+RewriteEngine On
+RewriteRule ^paginas/([0-9]+)/([a-z0-9_-]+)$ /local/page/index.php?category=$1&page=$2 [L,QSA]
+```
+
+The class has no dot, for the reason given above. Map onto the **query-string** address, never onto the
+routed path: Moodle's router reads the original request URI, so an internal rewrite to
+`/local_page/category/...` is invisible to it, and the request reaches it as `/paginas/...`, a path it
+has no route for. The Apache rule belongs where the slug rule above goes, in the same context. Where
+the router is configured, the script then answers the alias with a `303` to the routed address, so the
+alias works as a short redirect and the address bar settles on the canonical address; where it is not, the
+script serves the page at the alias. Adjust the prefix if Moodle lives in a subdirectory.
 
 ### Optional: shorten links Moodle prints (`urlrewriteclass`)
 

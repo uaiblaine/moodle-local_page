@@ -106,6 +106,7 @@ $string['privacy:metadata'] = 'The local pages plugin does not store any persona
 $string['restricted'] = 'Restricted by date';
 $string['setting_additionalhead'] = "Enable Additional HTML in Head";
 $string['setting_additionalhead_description'] = "Allow custom content to be added to the HTML &lt;head&gt; section.";
+$string['shareurl'] = 'Short address to share';
 $string['status'] = 'Status';
 $string['status_archived'] = 'Archived';
 $string['status_draft'] = 'Draft';

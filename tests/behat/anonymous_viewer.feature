@@ -42,3 +42,17 @@ Feature: A category's pages reach visitors only when the category is public
     When I visit the custom page "handbook" of the category "CAT1"
     Then I should see "The Alpha campus handbook starts here."
     And "Username" "field" should not exist
+
+  # The routed address, /local_page/category/N/slug, where the site's router is configured; the step
+  # asks the plugin's address builder, which answers the script's own address where it is not, as on
+  # the CI matrix (PHP's built-in server rewrites nothing). Either way it is the address the site links to.
+  Scenario: A visitor at a private category's routed address meets the login page
+    When I visit the routed page "handbook" of the category "CAT1"
+    Then "Username" "field" should exist
+    And I should not see "The Alpha campus handbook starts here."
+
+  Scenario: A logged-in administrator reads a category page at its routed address
+    Given I log in as "admin"
+    When I visit the routed page "handbook" of the category "CAT1"
+    Then I should see "The Alpha campus handbook starts here."
+    And "Username" "field" should not exist

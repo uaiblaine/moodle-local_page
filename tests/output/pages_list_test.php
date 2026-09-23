@@ -34,7 +34,8 @@ defined('MOODLE_INTERNAL') || die();
  * Every link on this screen used to be built for the site-wide context and for no other, which is
  * how three separate defects arrived together: the add button opened the system editor, the delete
  * link asked the system screen to delete a category's row, and the friendly URL advertised an
- * address the site answers with somebody else's page. The site-wide shapes are asserted beside the
+ * address the site answers with somebody else's page. Since stage 6 a category card's friendly URL
+ * is its own category address, and its public short address once one was minted. The site-wide shapes are asserted beside the
  * category ones on purpose — upstream's own screen must come out of this unchanged.
  *
  * @package    local_page
@@ -87,6 +88,8 @@ final class pages_list_test extends \advanced_testcase {
      * @return void
      */
     public function test_a_categorys_listing_keeps_every_link_inside_the_category(): void {
+        global $CFG;
+
         $this->resetAfterTest();
         $this->setAdminUser();
 
@@ -108,11 +111,114 @@ final class pages_list_test extends \advanced_testcase {
         $this->assertSame(sesskey(), $card->deleteurl->get_param('sesskey'));
 
         /*
-         * No friendly URL: wwwroot/<slug> is the site-wide address, and printing it for a category
-         * page would advertise an address that serves a different page altogether.
+         * Never the site-wide wwwroot/<slug>, which would advertise an address that serves a different
+         * page altogether: the friendly URL of a category page is its category address, spelled by
+         * the builder — the route while the router is configured, the script otherwise.
          */
-        $this->assertObjectNotHasProperty('friendlyurl', $card);
-        $this->assertObjectNotHasProperty('menuname', $card);
+        $this->assertSame('handbook', $card->menuname);
+        $this->assertSame(\local_page\local\links::page($page)->out(false), $card->friendlyurl);
+        $this->assertNotSame($CFG->wwwroot . '/handbook', $card->friendlyurl);
+    }
+
+    /**
+     * A category card shows its category address and, once one was minted, its public short address.
+     *
+     * The listing is a GET, and a GET never mints: the card only READS the code the save path minted.
+     * Without the router there is no short address worth printing, code or not.
+     *
+     * @return void
+     */
+    public function test_a_category_card_shows_its_addresses_and_never_mints(): void {
+        global $CFG, $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        $context = \core\context\coursecat::instance($category->id);
+        $page = $this->pages()->create_category_page($category->id, ['menuname' => 'handbook']);
+        $export = fn () => $this->only_live_card(
+            (new pages_list([$page->id => $page], $context))->export_for_template($this->renderer())
+        );
+
+        // The router on and no code yet: the route, and no short address — and none minted by looking.
+        $CFG->routerconfigured = true;
+        \core\di::reset_container();
+        $card = $export();
+        $this->assertSame("{$CFG->wwwroot}/local_page/category/{$category->id}/handbook", $card->friendlyurl);
+        $this->assertObjectNotHasProperty('shareurl', $card);
+        $this->assertSame(0, $DB->count_records('shortlink', ['component' => 'local_page']), 'A GET never mints.');
+
+        // Once the save path has minted one, the card shows it.
+        $share = \local_page\local\links::share($page)->out(false);
+        $card = $export();
+        $this->assertSame($share, $card->shareurl);
+        $this->assertStringStartsWith("{$CFG->wwwroot}/p/", $card->shareurl);
+
+        // The router off: the script's address, and no short address even though a code exists.
+        $CFG->routerconfigured = false;
+        \core\di::reset_container();
+        $card = $export();
+        $this->assertSame("{$CFG->wwwroot}/local/page/index.php?category={$category->id}&page=handbook", $card->friendlyurl);
+        $this->assertObjectNotHasProperty('shareurl', $card);
+
+        // The site-wide card never carries one.
+        $sitecard = (new page_card(7, 'Page', 'live', 0, 0, 'contact'))->export_for_template($this->renderer());
+        $this->assertObjectNotHasProperty('shareurl', $sitecard);
+    }
+
+    /**
+     * The friendly URL the RENDERED card prints is escaped, and reads the same for a site-wide card.
+     *
+     * Without the router a category page's address is the script's ?category=N&page=slug, the first
+     * value of that block with an ampersand in it. Upstream printed the block through a triple stash,
+     * which was harmless while it only ever held wwwroot/slug and puts a raw ampersand into the page
+     * the moment it holds a query string. The exported string is asserted elsewhere; only the rendered
+     * HTML shows which stash it went through, so this test reads the block out of the markup.
+     *
+     * @return void
+     */
+    public function test_the_rendered_friendly_url_is_escaped(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        $context = \core\context\coursecat::instance($category->id);
+        $page = $this->pages()->create_category_page($category->id, ['menuname' => 'handbook']);
+
+        $CFG->routerconfigured = false;
+        \core\di::reset_container();
+        $renderer = $this->renderer();
+        $html = $renderer->render_page_card(new page_card($page->id, 'Handbook', 'live', 0, 0, 'handbook', $context));
+
+        // Precondition: the value holds the ampersand this test is about, or it would pass by doing nothing.
+        $address = "{$CFG->wwwroot}/local/page/index.php?category={$category->id}&page=handbook";
+        $this->assertSame($address, \local_page\local\links::page($page)->out(false));
+
+        $blocks = $this->friendly_url_blocks($html);
+        $this->assertSame([s($address)], $blocks);
+        $this->assertStringContainsString('&amp;page=handbook', $blocks[0]);
+        $this->assertStringNotContainsString('&page=', $blocks[0]);
+
+        // Control: a site-wide card prints exactly what upstream printed.
+        $sitehtml = $renderer->render_page_card(new page_card(7, 'Page', 'live', 0, 0, 'contact'));
+        $this->assertSame(["{$CFG->wwwroot}/contact"], $this->friendly_url_blocks($sitehtml));
+    }
+
+    /**
+     * The contents of a rendered card's friendly URL block, and of no other address block.
+     *
+     * Every address on the card sits in the same kind of pre element, so the block is found by the
+     * label rendered just before it rather than by a pattern that could match a neighbour.
+     *
+     * @param string $html A rendered page card
+     * @return array The inner HTML of each friendly URL block, in document order
+     */
+    private function friendly_url_blocks(string $html): array {
+        $label = preg_quote(get_string('menu_name', 'local_page'), '~');
+        preg_match_all('~' . $label . '</label>\s*<pre class="custompage-url mb-2">(.*?)</pre>~s', $html, $matches);
+
+        return $matches[1];
     }
 
     /**

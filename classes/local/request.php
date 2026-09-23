@@ -54,6 +54,15 @@ use local_page\custompage;
  * 5. Then $PAGE: set_category_by_id() first for a category page, because it sets the course and the
  *    context as well and throws once either is set; set_context() otherwise; then the URL.
  *
+ * Every address it sets on $PAGE, stores in wantsurl or redirects to is spelled by {@see links}.
+ * While the site's router is configured, the legacy script is a doorway to the route: its slug form
+ * ({@see category()} with $legacy) answers a 303 to the routed address BEFORE anything else — no
+ * lookup and no visitor refusal, so every id and every slug gets the same answer, and the guard
+ * order above runs where the redirect lands. Upstream's ?id= address ({@see legacy()}) can only
+ * redirect AFTER the page's own rules and the public predicate have answered, because the redirect
+ * spells the page's slug, and handing a slug to a visitor the page is withheld from would tell them
+ * what the id names.
+ *
  * No require_login() for the page itself, anywhere. This plugin serves pages to visitors who are not
  * logged in, by design, on a site that keeps $CFG->forcelogin on: forcelogin is not an ambient gate
  * but a set of explicit reads in core, none of which this class makes. index.php keeps upstream's
@@ -65,12 +74,23 @@ use local_page\custompage;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class request {
+    /** @var int The status of an answer that renders a page. */
+    public const STATUS_OK = 200;
+
+    /** @var int The status of the visitor's login refusal: what core's route redirect and require_login() send. */
+    public const STATUS_LOGIN = 302;
+
+    /** @var int The status of "read this at its canonical address": the legacy script while the router is configured. */
+    public const STATUS_SEE_OTHER = 303;
+
     /**
      * Constructor: either a redirect, or a page and whether the viewer may read it.
      *
      * @param \moodle_url|null $redirect Where to send the client, when the answer is a redirect
      * @param custompage|null $page The page to render, or the "no access" placeholder
      * @param bool $canview Whether the viewer may read $page; false for the placeholder
+     * @param int $status The HTTP status the answer calls for: one of the STATUS_ constants
+     * @param \moodle_url|null $canonical The page's canonical address, when there is a page to name
      */
     private function __construct(
         /** @var \moodle_url|null Where to send the client, when the answer is a redirect. */
@@ -79,24 +99,46 @@ final class request {
         public readonly ?custompage $page,
         /** @var bool Whether the viewer may read the page; false for the placeholder and for a redirect. */
         public readonly bool $canview,
+        /** @var int The HTTP status the answer calls for; the route controller sends it, index.php cannot. */
+        public readonly int $status,
+        /** @var \moodle_url|null The page's canonical address for the head tags; null for a redirect or no page. */
+        public readonly ?\moodle_url $canonical = null,
     ) {
     }
 
     /**
-     * A request for a category's page: /local/page/index.php?category=N&page=slug, or &id=M.
+     * A request for a category's page: the route /local_page/category/N/slug, or the script's
+     * /local/page/index.php?category=N&page=slug, or its &id=M form.
      *
      * @param int $categoryid Course category id from the request
      * @param int $pageid Page id from the request, used when no slug was given
      * @param string $slug Friendly URL of the page within the category, or '' for the id form
      * @param string|null $predicate Public predicate class; tests pass a double
+     * @param bool $legacy Whether the request arrived on the legacy script rather than on the route
      * @return self A redirect target, or a page to render
      */
-    public static function category(int $categoryid, int $pageid, string $slug, ?string $predicate = null): self {
+    public static function category(
+        int $categoryid,
+        int $pageid,
+        string $slug,
+        ?string $predicate = null,
+        bool $legacy = false
+    ): self {
         global $CFG;
         require_once($CFG->dirroot . '/local/page/lib.php');
 
-        $params = $slug !== '' ? ['category' => $categoryid, 'page' => $slug] : ['category' => $categoryid, 'id' => $pageid];
-        $url = new \moodle_url('/local/page/index.php', $params);
+        /*
+         * Step 0, the legacy script's slug form while the router is configured: the route is this
+         * address's canonical spelling, so the script answers with a 303 to it before anything else.
+         * No lookup and no visitor refusal here — every id and every slug gets the same redirect, so
+         * the redirect tells nobody anything, and the guard order below runs where it lands. The id
+         * form has no route and carries on.
+         */
+        if ($legacy && $slug !== '' && links::routing_enabled()) {
+            return self::moved(links::category_page($categoryid, $slug));
+        }
+
+        $url = $slug !== '' ? links::category_page($categoryid, $slug) : links::legacy_category_id($categoryid, $pageid);
         $isvisitor = publicaccess::is_visitor();
 
         // Step 1: the visitor's one refusal, before any lookup — every id that is not public answers alike.
@@ -143,7 +185,7 @@ final class request {
         }
 
         // Step 5: $PAGE.
-        return self::answer($page, $canview, $url);
+        return self::answer($page, $canview, $url, links::page($page));
     }
 
     /**
@@ -156,8 +198,13 @@ final class request {
      * predicate is then applied AFTER the lookup — through local_page_user_can_view_page(), the rule
      * the file route shares — because the id is all this address carries and the category is only
      * known once the row is read. That is unavoidable for an id address and is the one place the
-     * order of {@see category()} does not hold; stage 6 answers a category page's id address with a
-     * redirect to its category address, so the pre-lookup refusal is the one visitors actually meet.
+     * order of {@see category()} does not hold.
+     *
+     * While the router is configured, a category page this viewer MAY read is answered with a 303 to
+     * its routed address instead of being rendered here. The redirect comes after the rules and the
+     * predicate on purpose: it spells the page's category and slug, so issuing it to a viewer the
+     * page is withheld from would tell them what the id names. They get the refusal, or the "no
+     * access" page, exactly as without the router.
      *
      * @param int $pageid Page id from the request
      * @param string $menuname Site-wide friendly URL from the request, or ''
@@ -170,10 +217,10 @@ final class request {
 
         if ($menuname !== '') {
             $page = custompage::load_by_menuname($menuname);
-            $url = new \moodle_url('/' . $menuname);
+            $url = links::legacy_menuname($menuname);
         } else {
             $page = custompage::load($pageid);
-            $url = new \moodle_url('/local/page/index.php', ['id' => $pageid]);
+            $url = links::legacy($pageid);
         }
 
         /*
@@ -184,11 +231,30 @@ final class request {
          * "no access" render for everybody.
          */
         $canview = local_page_user_can_view_page($page, $predicate);
-        if ((int) $page->id > 0 && scope::is_category($page) && publicaccess::is_visitor() && !$canview) {
+        $iscategory = (int) $page->id > 0 && scope::is_category($page);
+        if ($iscategory && publicaccess::is_visitor() && !$canview) {
             return self::refuse($url);
         }
 
-        return self::answer($page, $canview, $url);
+        // Only now, with the rules and the predicate answered: a readable category page is read at its route.
+        if ($iscategory && $canview && links::routing_enabled()) {
+            return self::moved(links::page($page));
+        }
+
+        /*
+         * The canonical of a site-wide page is upstream's, byte for byte: wwwroot/slug when the
+         * request came through the friendly URL, the ?id= address otherwise. A category page's is
+         * links::page(), which for a page READ here is the script's ?category=&page= form — with the
+         * router on, a readable one was redirected above.
+         */
+        $canonical = null;
+        if ($iscategory) {
+            $canonical = links::page($page);
+        } else if ((int) $page->id > 0) {
+            $canonical = $menuname !== '' ? links::legacy_menuname((string) $page->menuname) : links::legacy((int) $page->id);
+        }
+
+        return self::answer($page, $canview, $url, $canonical);
     }
 
     /**
@@ -202,7 +268,20 @@ final class request {
 
         $SESSION->wantsurl = $url->out(false);
 
-        return new self(new \moodle_url(get_login_url()), null, false);
+        return new self(new \moodle_url(get_login_url()), null, false, self::STATUS_LOGIN);
+    }
+
+    /**
+     * The answer "read this at its canonical address": a 303, which a browser does not cache.
+     *
+     * Not a 301: a browser keeps a permanent redirect, and a router switched off later would strand
+     * every cached visitor on a route nothing answers any more.
+     *
+     * @param \moodle_url $url The canonical address
+     * @return self The answer
+     */
+    private static function moved(\moodle_url $url): self {
+        return new self($url, null, false, self::STATUS_SEE_OTHER);
     }
 
     /**
@@ -214,9 +293,10 @@ final class request {
      * @param custompage $page The page, or the "no access" placeholder
      * @param bool $canview Whether the viewer may read it
      * @param \moodle_url $url The address the page is rendered at
+     * @param \moodle_url|null $canonical The page's canonical address, for the head tags
      * @return self The answer
      */
-    private static function answer(custompage $page, bool $canview, \moodle_url $url): self {
+    private static function answer(custompage $page, bool $canview, \moodle_url $url, ?\moodle_url $canonical = null): self {
         global $PAGE;
 
         $context = scope::context($page);
@@ -228,6 +308,6 @@ final class request {
         }
         $PAGE->set_url($url);
 
-        return new self(null, $page, $canview);
+        return new self(null, $page, $canview, self::STATUS_OK, $canonical);
     }
 }

@@ -105,6 +105,7 @@ $string['privacy:metadata'] = 'O plugin de páginas personalizadas não armazena
 $string['restricted'] = 'Restrita por data';
 $string['setting_additionalhead'] = 'Habilitar HTML adicional no cabeçalho';
 $string['setting_additionalhead_description'] = 'Permitir que conteúdo personalizado seja acrescentado à seção &lt;head&gt; do HTML.';
+$string['shareurl'] = 'Endereço curto para compartilhar';
 $string['status'] = 'Situação';
 $string['status_archived'] = 'Arquivada';
 $string['status_draft'] = 'Rascunho';

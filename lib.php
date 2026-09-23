@@ -447,6 +447,159 @@ function local_page_head_html(object $page): string {
 }
 
 /**
+ * Renders a page the viewer's request class decided to render, for every address that serves one.
+ *
+ * Two entry points serve a page: index.php, the script upstream wrote, and
+ * \local_page\route\controller\page, the routed category address. Both hand the request's answer
+ * here, so the two addresses cannot come to render different pages — this is what index.php did
+ * after the decision, moved rather than copied, including upstream's require_login() for a page
+ * with an access level and its html_writer calls.
+ *
+ * It performs the side effects on $PAGE and $CFG the page needs before the header is printed — the
+ * layout, the title and heading, the SEO and Open Graph tags appended to $CFG->additionalhtmlhead,
+ * the body classes and the page type — and RETURNS the body: the side-pre blocks, the page itself
+ * and, for somebody who may edit it, the edit button. The caller prints the header, the body and
+ * the footer, in that order. Stage 7 replaces the head-tag block below with a renderable and a hook.
+ *
+ * @param \local_page\local\request $answer An answer that renders: a page and whether the viewer may read it
+ * @return string The body HTML
+ * @throws \coding_exception When the answer is a redirect, which has nothing to render
+ */
+function local_page_render_view(\local_page\local\request $answer): string {
+    global $CFG, $DB, $OUTPUT, $PAGE, $SITE;
+
+    if ($answer->page === null) {
+        throw new \coding_exception('A redirect answer has no page to render.');
+    }
+
+    $custompage = $answer->page;
+    $canview = $answer->canview;
+    $context = \local_page\local\scope::context($custompage);
+
+    // Check if the custom page has specific access level requirements.
+    if (!empty($custompage->accesslevel)) {
+        require_login(); // Ensure the user is logged in if access level is required.
+
+        // Note: Additional capability checks can be added here based on $custompage->accesslevel.
+    }
+
+    // Set the page layout to use.
+    $PAGE->set_pagelayout('base'); // Set the page layout.
+
+    // Only expose SEO meta, headings, canonical URL and per-page Additional HTML once access is confirmed.
+    $safetitle = get_string('noaccess', 'local_page');
+
+    $headseo = '';
+    $existinghead = !empty($CFG->additionalhtmlhead) ? $CFG->additionalhtmlhead . "\n" : '';
+    if (!$canview) {
+        // Generic document title — do not leak draft/archived/deleted-page metadata via $PAGE / head.
+        $PAGE->set_title($safetitle);
+        $PAGE->set_heading('');
+        $CFG->additionalhtmlhead = $existinghead;
+    } else {
+        $PAGE->set_title($custompage->pagename);
+        $statusbadge = $custompage->status;
+
+        $metatags = [
+            'description' => $custompage->metadescription,
+            'keywords' => $custompage->metakeywords,
+            'author' => $custompage->metaauthor,
+            'og:title' => $custompage->metatitle,
+            'robots' => $custompage->metarobots,
+        ];
+
+        foreach ($metatags as $name => $content) {
+            if (!empty($content)) {
+                $headseo .= html_writer::empty_tag('meta', ['name' => $name, 'content' => $content]) . "\n";
+            }
+        }
+
+        /*
+         * The og:image tag is only worth emitting when pluginfile.php will actually serve the file:
+         * local_page_ogimage_is_servable() is the gate the file route applies (publication state only,
+         * never the viewer), so an editor previewing a draft gets no tag rather than a tag whose URL
+         * answers 404.
+         */
+        $fs = get_file_storage();
+        $files = local_page_ogimage_is_servable($custompage)
+            ? $fs->get_area_files($context->id, 'local_page', 'ogimage', $custompage->id, 'sortorder', false)
+            : [];
+
+        if ($files) {
+            $file = reset($files);
+            if (!$file->is_directory()) {
+                $imageurl = moodle_url::make_pluginfile_url(
+                    $file->get_contextid(),
+                    $file->get_component(),
+                    $file->get_filearea(),
+                    $file->get_itemid(),
+                    $file->get_filepath(),
+                    $file->get_filename(),
+                    false
+                );
+                $headseo .= html_writer::empty_tag('meta', ['property' => 'og:image', 'content' => $imageurl->out(false)]) . "\n";
+            }
+        }
+
+        /*
+         * The canonical address is the request's: upstream's own for a site-wide page, byte for byte,
+         * and for a category page its category address — the route while the router is configured.
+         */
+        $canonicalurl = $answer->canonical ?? \local_page\local\links::legacy((int) $custompage->id);
+
+        $headseo .= html_writer::empty_tag('meta', ['property' => 'og:site_name', 'content' => $SITE->fullname]) . "\n";
+        $headseo .= html_writer::empty_tag('meta', ['property' => 'og:type', 'content' => 'website']) . "\n";
+        $headseo .= html_writer::empty_tag('meta', ['property' => 'og:title', 'content' => $custompage->pagename]) . "\n";
+        $headseo .= html_writer::empty_tag('meta', ['property' => 'og:url', 'content' => $canonicalurl->out(false)]) . "\n";
+
+        /*
+         * The per-page <head> HTML, which local_page_head_html() withholds unless the site setting is
+         * on AND the page is a site-wide one: no sanitiser exists for head markup, so the field is
+         * never offered to a category author and a stored value is ignored rather than emitted.
+         */
+        $additionalhead = local_page_head_html($custompage);
+        $CFG->additionalhtmlhead = $existinghead . $headseo . $additionalhead;
+
+        if ($custompage->hidetitle == 'no') {
+            $PAGE->set_heading($custompage->pagename);
+        }
+
+        if (has_capability(\local_page\local\scope::capability($context), $context)) {
+            $PAGE->add_body_class('local-page-status-' . $statusbadge);
+        }
+
+        $bodyid = (int) $custompage->id;
+        if ($bodyid > 0 && $DB->record_exists('local_page', ['id' => $bodyid, 'deleted' => 0])) {
+            $PAGE->add_body_class('local-page-id-' . $bodyid);
+        }
+    }
+
+    $PAGE->set_pagetype('local-page-id-' . max(0, (int) $custompage->id));
+
+    // Obtain the renderer for the local_page plugin to output the page content.
+    $renderer = $PAGE->get_renderer('local_page');
+
+    $body = $OUTPUT->blocks('side-pre');
+    $body .= $renderer->showpage($custompage); // Render the custom page content.
+
+    // Check if the user has the capability to add pages or is a site admin.
+    $editpageid = (int) $custompage->id;
+    if ($editpageid > 0 && has_capability(\local_page\local\scope::capability($context), $context)) {
+        $footerbtn = html_writer::div(
+            html_writer::link(
+                new moodle_url('/local/page/edit.php', ['id' => $editpageid]),
+                '<i class="fa fa-pencil me-2"></i>' . get_string('edit', 'moodle'),
+                ['class' => 'btn btn-primary']
+            ),
+            'local-page-admin-controls mt-3'
+        );
+        $body .= $footerbtn;
+    }
+
+    return $body;
+}
+
+/**
  * Forces a category page to logged-in visitors unless its editor may publish to the open web.
  *
  * Publishing is a separate power from authoring, which is why local/page:publishcategorypages is a

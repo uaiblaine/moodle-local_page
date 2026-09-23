@@ -114,7 +114,8 @@ rule did not apply.
 
 ```
 index.php            Public viewer. Hands ?id=, ?menuname= or ?category=&page= to the
-                     request class, translates its answer, then renders.
+                     request class, translates its answer, then renders through
+                     local_page_render_view() (lib.php), the body the route renders too.
 pages.php            Admin list of pages (cards), and the delete action.
 edit.php             Admin add/edit screen; wraps forms/edit.php.
 forms/edit.php       The whole edit form — the largest file in the plugin.
@@ -123,6 +124,9 @@ lib.php              Function-only library: the access predicate, pluginfile ser
 renderer.php         showpage() and the placeholder substitution for page content.
 classes/custompage.php      Row wrapper used by the viewer.
 classes/local/request.php   The viewer's decision, in one order, for every address.
+classes/local/links.php     The one place a page's addresses are spelled: script, route, /p/ code.
+classes/route/controller/page.php  The routed address /local_page/category/{category}/{slug}.
+classes/shortlink_handler.php      Resolves the plugin's /p/ codes for core's shortlink route.
 classes/local/publicaccess.php  Fail-closed adapter: is this category public; who is a visitor.
 classes/local/scope.php     Which context a page lives in, and which capability governs it.
 classes/url_rewriter.php    Friendly-URL rewriting (pairs with .htaccess).
@@ -163,11 +167,37 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php.
   the refusal path (zero), with a public category as the control that the
   meter sees a lookup. `request::legacy()` (the upstream `?id=` and
   `?menuname=` addresses) can only apply the predicate AFTER its lookup,
-  because an id names no category until the row is read; stage 6 redirects a
-  category page's id address to its category address. `redirect()` throws
+  because an id names no category until the row is read. `redirect()` throws
   under PHPUnit with no URL in the message, which is why the class RETURNS its
   target and `index.php` calls `redirect()`; the upstream `require_login()` for
-  a page with an access level stays in `index.php`, after that redirect.
+  a page with an access level runs in `local_page_render_view()`, after that
+  redirect, on both the script and the route.
+- **`\local_page\local\links` is the only place an address is spelled.** The request class, the
+  canonical tag, the listing card, the shortlink handler and the Behat step all ask it; a
+  `new moodle_url('/local/page/index.php', ...)` written anywhere else is how two parts of the plugin
+  come to disagree about where a page lives. It answers the route only while
+  `$CFG->routerconfigured` is set — the fleet stacks set it in `config.php`, so PHPUnit and Behat see
+  it; `mdl ci` (PHP's built-in server) does not — and every test whose answer depends on it sets it
+  explicitly, then empties the DI container, because the router memoises its base path when built.
+- **Codes are minted at save, never on a GET.** `renderer::save_page()` calls `links::share()` for a
+  category page while the router is configured; the card only reads `links::existing_share()`. Minting
+  goes through core's `\core\shortlink::create_public_shortlink()` with no retry around it: core's
+  delegated transaction is left undisposed when its insert fails, and catching that on PostgreSQL would
+  poison the rest of the request. `pages.php` forgets a page's codes on delete, `db/uninstall.php` on
+  uninstall; core deletes nothing from `{shortlink}`.
+- **The legacy script's two redirects sit on opposite sides of the rules, on purpose.** The slug form
+  (`request::category(..., legacy: true)`) answers a 303 to the route BEFORE any lookup — the same
+  redirect for every id and slug, so it tells nobody anything. The `?id=` form (`request::legacy()`)
+  answers its 303 only AFTER the page's rules and the predicate: the redirect spells the page's
+  category and slug, and handing that to a visitor the page is withheld from names the page. The id
+  form `?category=N&id=M` has no route and is still served. index.php cannot choose the status — core's
+  `redirect()` always sends 303 — so the answer carries it (`request::$status`) for the controller.
+- **In a `route_testcase` the harness's router must be the only one the process builds.** Spelling a
+  routed address (the builder, `get_path_for_callable()`, `links::share()`) BEFORE `process_request()`
+  builds a second router whose application maps every route onto the first one's collector, and the
+  request answers 500. Seed `{shortlink}` rows directly in route tests and spell expected addresses
+  after the request. A second request in the same test works once `\core\di::reset_container()` has
+  emptied the container (measured here on `page_test`'s three-request oracle test).
 - **`publicaccess` fails closed, and nothing declares a dependency.** Without
   `\local_unlistedcourses\category_discoverability` nothing is public, which is
   the state of every CI leg — the plugin is not installed there. Tests that
@@ -259,14 +289,20 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php.
   stated rather than assumed — and holds three things: a visitor still reads a
   site-wide page, a visitor asking for a category page meets the login page and
   is brought back to the page after logging in, and an administrator reads that
-  same page. There is no "public category renders for a visitor" scenario on
-  purpose: "public" comes from `local_unlistedcourses`, which the CI matrix does
-  not install, so that control is PHPUnit's (`request_test`, with the predicate
-  double). `tests/generator/behat_local_page_generator.php` creates
+  same page — then the last two again at the routed address. There is no
+  "public category renders for a visitor" scenario on purpose: "public" comes
+  from `local_unlistedcourses`, which the CI matrix does not install, so that
+  control is PHPUnit's (`request_test` with the predicate double, and
+  `route/controller/page_test` with the real predicate, skipped where it is
+  absent). `tests/generator/behat_local_page_generator.php` creates
   `"local_page > pages"` (a `category` column takes a category idnumber), and
   `tests/behat/behat_local_page.php` visits a page at its category address,
-  whose category id Behat cannot compute — that context file must never carry a
-  `MOODLE_INTERNAL` guard. `mdl ci --behat` therefore proves something here, and
+  whose category id Behat cannot compute. Its "routed page" step asks
+  `links::category_page()` in the Behat process rather than spelling
+  `/local_page/category/...`: the fleet stacks' Behat site has the router, the
+  matrix's `php -S` site has neither a rewrite nor `routerconfigured`, and the
+  builder answers each with the address it serves. That context file must never
+  carry a `MOODLE_INTERNAL` guard. `mdl ci --behat` therefore proves something here, and
   the fleet's "Behat collected no scenarios" guard is live for this plugin.
 
 ## When in doubt

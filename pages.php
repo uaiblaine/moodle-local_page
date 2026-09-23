@@ -92,6 +92,8 @@ if ($deletepage !== 0) {
                 (int) $pagetodelete->id
             ),
         ]);
+        // Its public short address dies with it: the /p/ code of a deleted page answers not found.
+        \local_page\local\links::forget((int) $pagetodelete->id);
     }
     // Redirect to the same page to prevent resubmission.
     redirect($listurl);

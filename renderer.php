@@ -401,6 +401,17 @@ class local_page_renderer extends plugin_renderer_base {
                         $result
                     );
                 }
+
+                /*
+                 * A category page gets its public short address the first time it is saved, so an
+                 * author has something to share from then on. This is the one place codes are
+                 * minted — never on a GET — and share() is idempotent: an existing code is reused.
+                 * Only while the router is configured, because without it core would spell the code
+                 * under /r.php/, a longer address than the page's own.
+                 */
+                if ($iscategory && \local_page\local\links::routing_enabled()) {
+                    \local_page\local\links::share($DB->get_record('local_page', ['id' => (int) $result], '*', MUST_EXIST));
+                }
                 redirect(new moodle_url($CFG->wwwroot . '/local/page/edit.php', ['id' => $result]));
             }
         }

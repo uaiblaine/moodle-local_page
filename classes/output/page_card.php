@@ -160,14 +160,24 @@ class page_card implements renderable, templatable {
         $data->deleteurl = new moodle_url('/local/page/pages.php', $deleteparams);
 
         /*
-         * Add friendly URL if menuname exists. A category page never gets one: wwwroot/<slug> is
-         * the site-wide convention, answered by the web server rewrite for site pages only, and a
-         * category page's address is a routed one that arrives in a later stage. Printing the
-         * site-wide form here would advertise an address that serves somebody else's page.
+         * Add friendly URL if menuname exists. A category page never gets the site-wide form:
+         * wwwroot/<slug> is answered by the web server rewrite for site pages only, and printing it
+         * here would advertise an address that serves somebody else's page. Its friendly URL is its
+         * canonical address instead — the route while the router is configured, the script's
+         * ?category=&page= form otherwise — and, once one was minted at save, its public short
+         * address to share. Reading the code is all a listing does: a GET never mints one.
          */
         if ($this->menuname && !$iscategory) {
             $data->menuname = $this->menuname;
             $data->friendlyurl = $CFG->wwwroot . '/' . $this->menuname;
+        } else if ($this->menuname && $iscategory) {
+            $row = (object) ['id' => (int) $this->id, 'menuname' => $this->menuname, 'contextid' => (int) $context->id];
+            $data->menuname = $this->menuname;
+            $data->friendlyurl = \local_page\local\links::page($row)->out(false);
+            $shareurl = \local_page\local\links::existing_share((int) $this->id);
+            if ($shareurl !== null) {
+                $data->shareurl = $shareurl->out(false);
+            }
         }
 
         return $data;

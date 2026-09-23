@@ -30,6 +30,7 @@
     * pageurl - Standard page URL
     * menuname - Menu name for friendly URL (optional)
     * friendlyurl - Friendly URL (optional)
+    * shareurl - Public short address of a category page, when one was minted (optional)
     * viewurl - URL to view page
     * deleteurl - URL to delete page
 
@@ -45,6 +46,7 @@
         "pageurl": "/local/page/?id=123",
         "menuname": "sample-page",
         "friendlyurl": "/sample-page",
+        "shareurl": "https://example.com/p/Ab3xK",
         "viewurl": "/local/page/?id=123",
         "deleteurl": "/local/page/pages.php?pagedel=123&sesskey=abc123"
     }
@@ -72,10 +74,17 @@
         <pre class="custompage-url mb-2">{{{pageurl}}}</pre>
 
         {{! Friendly URL if menuname exists }}
+        {{! Escaped on purpose: a category page's script address carries an ampersand in its query string }}
         {{#menuname}}
             <label class="custompages-title-badge-label">{{#str}}menu_name, local_page{{/str}}</label>
-            <pre class="custompage-url mb-2">{{{friendlyurl}}}</pre>
+            <pre class="custompage-url mb-2">{{friendlyurl}}</pre>
         {{/menuname}}
+
+        {{! Public short address of a category page, minted when the page was saved }}
+        {{#shareurl}}
+            <label class="custompages-title-badge-label">{{#str}}shareurl, local_page{{/str}}</label>
+            <pre class="custompage-url mb-2"><a href="{{shareurl}}">{{shareurl}}</a></pre>
+        {{/shareurl}}
 
         {{! Action buttons }}
         <div class="custompages-btn-group" role="group">

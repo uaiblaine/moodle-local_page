@@ -31,6 +31,9 @@
  * legacy rows keep their files and where the column's 0 resolves to, and which must be cleaned
  * even when the table holds no rows at all.
  *
+ * It also removes the plugin's rows from core's shortlink table, which nothing else would: a /p/
+ * code left behind would point core at a handler that no longer exists.
+ *
  * @return bool
  */
 function xmldb_local_page_uninstall() {
@@ -57,6 +60,9 @@ function xmldb_local_page_uninstall() {
         $fs->delete_area_files($contextid, 'local_page', 'pagecontent');
         $fs->delete_area_files($contextid, 'local_page', 'ogimage');
     }
+
+    // The public short codes minted for category pages: core never deletes from its shortlink table.
+    $DB->delete_records('shortlink', ['component' => 'local_page']);
 
     return true;
 }
