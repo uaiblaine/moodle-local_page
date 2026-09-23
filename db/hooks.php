@@ -15,19 +15,21 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version file for component local_page.
+ * Hook callback registrations for local_page.
  *
- * @package     local_page
- * @author      Marcin Czaja RoseaThemes
- * @copyright   2025 Marcin Czaja RoseaThemes
- * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * A change to this file registers only after a version bump and an upgrade.
+ *
+ * @package    local_page
+ * @copyright  2026 Anderson Blaine
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die;
+defined('MOODLE_INTERNAL') || die();
 
-$plugin->requires   = 2026042000; // Moodle 5.2.
-$plugin->supported  = [502, 502];
-$plugin->version    = 2026092207;
-$plugin->release    = 'v1.0.10+uai.8';
-$plugin->maturity   = MATURITY_STABLE;
-$plugin->component  = 'local_page';
+$callbacks = [
+    [
+        'hook' => \core\hook\output\before_standard_head_html_generation::class,
+        'callback' => 'local_page\local\hook\output\before_standard_head_html_generation::callback',
+        'priority' => 0,
+    ],
+];

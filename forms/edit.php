@@ -400,11 +400,16 @@ class pages_edit_product_form extends moodleform {
      * another live page of the same context already holds. Only the second one is scoped — see
      * \local_page\local\slug::is_reserved() for why stored rows are never renamed to match.
      *
+     * The Open Graph image is refused unless its content is the picture its name says. The file
+     * manager accepts a file by its extension alone, and this one is served to anybody.
+     *
      * @param array $data Submitted values, "fieldname" => value
      * @param array $files Uploaded files, unused here
      * @return array Errors keyed by element name, empty when everything is acceptable
      */
     public function validation($data, $files) {
+        global $USER;
+
         $errors = parent::validation($data, $files);
 
         $accesslevel = trim((string) ($data['accesslevel'] ?? ''));
@@ -456,6 +461,29 @@ class pages_edit_product_form extends moodleform {
             $errors['menuname'] = get_string('menuname_reserved', 'local_page');
         } else if ($menuname !== '' && \local_page\local\slug::is_taken($menuname, (int) ($data['id'] ?? 0), $contextid)) {
             $errors['menuname'] = get_string('menuname_taken', 'local_page');
+        }
+
+        /*
+         * The image goes out to anybody at an address a scraper fetches, so a file whose content is
+         * not the raster its name says — an SVG saved as cover.png — is refused here rather than
+         * stored. The draft area is the submitting user's, which is where the file manager put it.
+         */
+        $ogdraftitemid = (int) ($data['ogimage_filemanager'] ?? 0);
+        if ($ogdraftitemid > 0) {
+            $ogdraftfiles = get_file_storage()->get_area_files(
+                \core\context\user::instance((int) $USER->id)->id,
+                'user',
+                'draft',
+                $ogdraftitemid,
+                'id',
+                false
+            );
+            foreach ($ogdraftfiles as $ogdraftfile) {
+                if (!\local_page\local\ogimage::is_image($ogdraftfile)) {
+                    $errors['ogimage_filemanager'] = get_string('edit_ogimage_notimage', 'local_page');
+                    break;
+                }
+            }
         }
 
         return $errors;

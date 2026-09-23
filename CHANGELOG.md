@@ -1,5 +1,68 @@
 # CHANGELOG
 
+## [1.0.10+uai.8] - 2026-09-22
+
+The Open Graph port. What a page puts in the document head when its link is shared — the preview a
+messaging app draws — is now built by a renderable, rendered by a template and written by a hook,
+instead of being appended to `$CFG->additionalhtmlhead` with `html_writer`. No schema change and no
+upgrade step; the version bump is what registers the hook.
+
+### Added
+- **`\local_page\output\opengraph`** and **`templates/opengraph.mustache`**: the Open Graph metas
+  as RDFa property metas — `og:type`, `og:title`, `og:description`, `og:url`, `og:site_name`,
+  `og:locale` and `og:image` with `og:image:type`, `og:image:alt`, `og:image:width` and
+  `og:image:height`. Every value is held in the plain spelling and escaped once, by the template.
+- **`db/hooks.php`** and **`\local_page\local\hook\output\before_standard_head_html_generation`**:
+  the callback writes the tags into the head when, and only when, `local_page_render_view()`
+  registered them — with the name metas (description, keywords, author, robots) and a
+  `<link rel="canonical">` as literal escaped strings beside the template's output, then the per-page
+  head HTML of a site-wide page, raw, as before.
+- **`og:description`**, from the page's meta description, and no tag at all when it is empty.
+- **`og:locale`**, the language the page is rendered in, with its territory upper-cased (`pt_BR`).
+- **`og:image:type`** and, when the file can be measured, **`og:image:width`** and
+  **`og:image:height`**, read through core's own cache of image sizes (`core/file_imageinfo`, keyed by
+  content hash), which the editor's file manager already fills when it validates the upload.
+- **The canonical link**, `<link rel="canonical">`, on every page the viewer may read, at the address
+  `og:url` carries.
+- **The hashed image address** `…/ogimage/<page id>/<content hash>/<file name>`, spelled by the new
+  `\local_page\local\ogimage`: a replaced image is a new address, so a messaging app's cached
+  preview of the old picture never stands in for it.
+- Tests: `tests/output/opengraph_test.php`,
+  `tests/local/hook/output/before_standard_head_html_generation_test.php`, the fixture
+  `tests/classes/ogimage_fixture.php`, and new cases in `tests/lib_test.php`,
+  `tests/save_page_test.php` and `tests/forms/edit_form_test.php`; fourteen more entries in
+  `mutations/gates.conf`.
+
+### Changed
+- **One `og:title`**: the page's meta title when it has one, its name otherwise.
+- **The robots directive of a category page**: its own when its author wrote one, otherwise `noindex`
+  unless the site is open to search engines (`$CFG->opentowebcrawlers`). A site-wide page without a
+  directive still carries none.
+- **The Open Graph image may be up to 600 KB** (it was 200 KB), what WhatsApp was measured to accept.
+- **`$CFG->additionalhtmlhead` is no longer touched.** The plugin appended its tags to the site setting
+  mid-request; the site's own additional head HTML is now left exactly as the administrator wrote it.
+- **The image route accepts the hashed address beside upstream's flat one**, behind the same
+  publication and context gates. The hash is a cache key, not a credential, and is not compared with
+  the file; a path segment that is not a content hash is refused rather than ignored.
+- The meta description, keywords, author and titles go through `format_string()` in the page's
+  context before they are written, so a multilang span in them reads as the reader's language.
+
+### Fixed
+- **An Open Graph image must be the picture its name says.** The file manager's accepted types
+  (JPEG, PNG, WebP) were applied to the file name only, so an SVG saved as `cover.png` — markup, able
+  to carry a script — was stored, typed `image/png`, advertised with the 800 × 600 or stated size
+  core's SVG branch reports, and served to anybody at the anonymous image address. The new
+  `\local_page\local\ogimage::is_image()` requires one of those extensions and core's
+  `stored_file::is_valid_image()`, whose type read from the content must equal the stored one; the
+  editor refuses such a file with a message (new string `edit_ogimage_notimage`), and the file route
+  and the head tags refuse one that reached the area any other way. Present since upstream; five more
+  entries in `mutations/gates.conf`, and `tests/lib_test.php` asks the image route through a helper
+  carrying the file's ETag, so a mutated route answers 304 instead of writing binary bytes into the
+  PHPUnit log.
+- **The duplicate and invalid `og:title` upstream emitted.** The meta title was written as
+  `<meta name="og:title">` — which no Open Graph reader looks at — and the page name as the real
+  `og:title` property, so a shared link showed the page name and never the title written for sharing.
+
 ## [1.0.10+uai.7] - 2026-09-22
 
 The addresses of category pages. A category page answered only at the script's

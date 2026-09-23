@@ -78,6 +78,43 @@ told from the ones that do not, and a reader of a page kept for logged-in users 
 form and back to the page. The same rule governs the files a category page embeds. A logged-in user never meets it: what they may read is decided by the page's own status,
 publish window, "only logged-in users" flag and access level, in the category's context.
 
+### Sharing a page: Open Graph
+
+When a link to a page is pasted into a messaging app or a social network, the app fetches the page
+anonymously and builds its preview card from the page's head. Every page the viewer may read carries:
+
+- **one `og:title`**: the page's *Meta Title* when it has one, its name otherwise;
+- **`og:description`**: the page's *Meta Description*, and no tag at all when it is empty;
+- **`og:url`** and a **`<link rel="canonical">`**: the page's canonical address — for a category page,
+  the routed address where the router is configured;
+- **`og:site_name`**, **`og:type`** (`website`) and **`og:locale`**, the language the page was
+  rendered in, spelled the Open Graph way (`pt_BR`, not Moodle's `pt_br`);
+- **`og:image`**, with **`og:image:type`**, **`og:image:alt`** (the title) and, when the file can be
+  measured, **`og:image:width`** and **`og:image:height`**.
+
+The page's *Meta Description*, *Meta Keywords* and *Meta Author* are written as the ordinary
+`description`, `keywords` and `author` metas as well. A page the viewer may not read — a draft, a
+page outside its publish window, a category page withheld from a visitor — puts none of this in the
+head.
+
+**The image.** Upload it in the page's *Open Graph Image File* field: JPEG, PNG or WebP, up to
+**600 KB**, ideally **1200 × 630** pixels, the size preview cards are drawn at. 600 KB is what
+WhatsApp was measured to accept; a larger image is dropped from the card without an error. SVG is
+refused, because the image is served to anybody — and so is any file whose content is not the picture
+its name says, such as an SVG renamed to `.png`: the editor reports it when the page is saved. It is served to anybody on purpose: the app fetching
+it carries no Moodle session, so it is gated only on the page being published — never on who is
+asking — and a draft, archived or expired page has no image, whoever asks. Its address carries the
+file's content hash (`…/ogimage/<page id>/<hash>/<file name>`): messaging apps keep a preview for as
+long as they like, keyed by the image address, so replacing the picture changes the address and the
+new one is fetched. The old address keeps working and serves the new picture.
+
+**Search engines.** A page whose author filled in *Meta Robots* carries that directive. Otherwise a
+**category page** is marked `noindex` unless the site is open to search engines
+(`$CFG->opentowebcrawlers`, *Site administration > Security > Site security settings > Open to
+search engines*): a category page exists so that a shared link unfurls, not so that a search engine
+lists it, and that is the site's decision, not each author's. A site-wide page without a directive
+carries none, as before.
+
 ## Friendly URLs (`menuname`)
 
 Pages can use a **Friendly URL** slug (`menuname`) so viewers can open  

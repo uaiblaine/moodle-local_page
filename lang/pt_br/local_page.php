@@ -40,6 +40,7 @@ $string['custompage_title'] = 'Gerenciamento de páginas';
 $string['delete'] = 'Remover';
 $string['edit_head'] = 'Conteúdo para &lt;head&gt;';
 $string['edit_ogimage'] = 'Arquivo de imagem Open Graph';
+$string['edit_ogimage_notimage'] = 'Este arquivo não é uma imagem JPEG, PNG ou WebP do tipo que o nome indica. A imagem Open Graph é servida a qualquer pessoa, então só a própria imagem é aceita: envie a figura, salva com a extensão do seu formato.';
 $string['form_field_date'] = 'Data de início da publicação';
 $string['form_field_enddate'] = 'Data de fim da publicação';
 $string['form_field_enddate_description'] = 'Data de fim da publicação';

@@ -55,13 +55,17 @@ function local_page_xy_simple_content_builder_is_available(): bool {
 /**
  * Shared options for the Open Graph image file manager (form definition, set_data, save).
  * SVG is excluded because ogimage URLs are anonymous-readable and image/svg+xml can execute script.
+ * The file manager applies accepted_types to the file NAME only; \local_page\local\ogimage::is_image()
+ * holds the content to the same list, in the editor's validation, the file route and the head tags.
+ * The 600 KB cap is what WhatsApp was measured to accept for a link preview; a larger image is
+ * silently dropped from the card rather than refused.
  *
  * @return array
  */
 function local_page_ogimage_filemanager_options(): array {
     return [
         'subdirs' => 0,
-        'maxbytes' => 204800,
+        'maxbytes' => 614400,
         'maxfiles' => 1,
         'accepted_types' => ['jpg', 'jpeg', 'png', 'webp'],
     ];
@@ -201,11 +205,11 @@ function local_page_publish_window_is_open(object $page, int $now): bool {
  * fetched by a scraper — a link preview in a chat client, a crawler, a social network — and that
  * fetch is anonymous and carries no Moodle session, so gating the image on a viewer's capabilities
  * would break every preview rather than protect anything. Nothing is leaked by the difference: the
- * og:image meta tag is emitted by index.php only after the viewer has passed
- * local_page_user_can_view_page(), so a visitor who may not read an onlyloggedin or capability
- * restricted page is never handed the image URL in the first place. What this gate DOES enforce is
- * the part a scraper must not be able to walk around: a draft, archived, expired, not-yet-started
- * or deleted page has no published image, whoever asks.
+ * og:image meta tag is emitted only for a page the viewer has passed local_page_user_can_view_page()
+ * on (local_page_render_view() registers the head tags only then), so a visitor who may not read an
+ * onlyloggedin or capability restricted page is never handed the image URL in the first place.
+ * What this gate DOES enforce is the part a scraper must not be able to walk around: a draft,
+ * archived, expired, not-yet-started or deleted page has no published image, whoever asks.
  *
  * @param object $page Row from {local_page} (stdClass)
  * @return bool
@@ -455,18 +459,18 @@ function local_page_head_html(object $page): string {
  * after the decision, moved rather than copied, including upstream's require_login() for a page
  * with an access level and its html_writer calls.
  *
- * It performs the side effects on $PAGE and $CFG the page needs before the header is printed — the
- * layout, the title and heading, the SEO and Open Graph tags appended to $CFG->additionalhtmlhead,
- * the body classes and the page type — and RETURNS the body: the side-pre blocks, the page itself
- * and, for somebody who may edit it, the edit button. The caller prints the header, the body and
- * the footer, in that order. Stage 7 replaces the head-tag block below with a renderable and a hook.
+ * It performs the side effects on $PAGE the page needs before the header is printed — the layout,
+ * the title and heading, the body classes, the page type and the head tags, which it registers
+ * with \local_page\output\opengraph for the before_standard_head_html_generation hook to write —
+ * and RETURNS the body: the side-pre blocks, the page itself and, for somebody who may edit it, the
+ * edit button. The caller prints the header, the body and the footer, in that order.
  *
  * @param \local_page\local\request $answer An answer that renders: a page and whether the viewer may read it
  * @return string The body HTML
  * @throws \coding_exception When the answer is a redirect, which has nothing to render
  */
 function local_page_render_view(\local_page\local\request $answer): string {
-    global $CFG, $DB, $OUTPUT, $PAGE, $SITE;
+    global $DB, $OUTPUT, $PAGE;
 
     if ($answer->page === null) {
         throw new \coding_exception('A redirect answer has no page to render.');
@@ -489,76 +493,13 @@ function local_page_render_view(\local_page\local\request $answer): string {
     // Only expose SEO meta, headings, canonical URL and per-page Additional HTML once access is confirmed.
     $safetitle = get_string('noaccess', 'local_page');
 
-    $headseo = '';
-    $existinghead = !empty($CFG->additionalhtmlhead) ? $CFG->additionalhtmlhead . "\n" : '';
     if (!$canview) {
         // Generic document title — do not leak draft/archived/deleted-page metadata via $PAGE / head.
         $PAGE->set_title($safetitle);
         $PAGE->set_heading('');
-        $CFG->additionalhtmlhead = $existinghead;
     } else {
         $PAGE->set_title($custompage->pagename);
         $statusbadge = $custompage->status;
-
-        $metatags = [
-            'description' => $custompage->metadescription,
-            'keywords' => $custompage->metakeywords,
-            'author' => $custompage->metaauthor,
-            'og:title' => $custompage->metatitle,
-            'robots' => $custompage->metarobots,
-        ];
-
-        foreach ($metatags as $name => $content) {
-            if (!empty($content)) {
-                $headseo .= html_writer::empty_tag('meta', ['name' => $name, 'content' => $content]) . "\n";
-            }
-        }
-
-        /*
-         * The og:image tag is only worth emitting when pluginfile.php will actually serve the file:
-         * local_page_ogimage_is_servable() is the gate the file route applies (publication state only,
-         * never the viewer), so an editor previewing a draft gets no tag rather than a tag whose URL
-         * answers 404.
-         */
-        $fs = get_file_storage();
-        $files = local_page_ogimage_is_servable($custompage)
-            ? $fs->get_area_files($context->id, 'local_page', 'ogimage', $custompage->id, 'sortorder', false)
-            : [];
-
-        if ($files) {
-            $file = reset($files);
-            if (!$file->is_directory()) {
-                $imageurl = moodle_url::make_pluginfile_url(
-                    $file->get_contextid(),
-                    $file->get_component(),
-                    $file->get_filearea(),
-                    $file->get_itemid(),
-                    $file->get_filepath(),
-                    $file->get_filename(),
-                    false
-                );
-                $headseo .= html_writer::empty_tag('meta', ['property' => 'og:image', 'content' => $imageurl->out(false)]) . "\n";
-            }
-        }
-
-        /*
-         * The canonical address is the request's: upstream's own for a site-wide page, byte for byte,
-         * and for a category page its category address — the route while the router is configured.
-         */
-        $canonicalurl = $answer->canonical ?? \local_page\local\links::legacy((int) $custompage->id);
-
-        $headseo .= html_writer::empty_tag('meta', ['property' => 'og:site_name', 'content' => $SITE->fullname]) . "\n";
-        $headseo .= html_writer::empty_tag('meta', ['property' => 'og:type', 'content' => 'website']) . "\n";
-        $headseo .= html_writer::empty_tag('meta', ['property' => 'og:title', 'content' => $custompage->pagename]) . "\n";
-        $headseo .= html_writer::empty_tag('meta', ['property' => 'og:url', 'content' => $canonicalurl->out(false)]) . "\n";
-
-        /*
-         * The per-page <head> HTML, which local_page_head_html() withholds unless the site setting is
-         * on AND the page is a site-wide one: no sanitiser exists for head markup, so the field is
-         * never offered to a category author and a stored value is ignored rather than emitted.
-         */
-        $additionalhead = local_page_head_html($custompage);
-        $CFG->additionalhtmlhead = $existinghead . $headseo . $additionalhead;
 
         if ($custompage->hidetitle == 'no') {
             $PAGE->set_heading($custompage->pagename);
@@ -595,6 +536,15 @@ function local_page_render_view(\local_page\local\request $answer): string {
         );
         $body .= $footerbtn;
     }
+
+    /*
+     * The head tags, registered LAST: the hook that writes them fires from an error page too, so
+     * nothing that can still throw may come after this. A page the viewer may not read registers
+     * none — its title, description, image and canonical address stay out of the head. The canonical
+     * is the request's: upstream's own for a site-wide page, its category address for a category page.
+     */
+    $canonicalurl = $answer->canonical ?? \local_page\local\links::legacy((int) $custompage->id);
+    \local_page\output\opengraph::set($canview ? \local_page\output\opengraph::for_page($custompage, $canonicalurl) : null);
 
     return $body;
 }
@@ -980,11 +930,34 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
             return false;
         }
 
+        /*
+         * The address the head tags hand out carries the file's content hash as one segment before
+         * the name (\local_page\local\ogimage::url()), so a replaced image is a new address and a
+         * scraper's cached preview of the old one never stands in for it. The segment is a cache
+         * key, not a credential, and is deliberately NOT compared with the file: the gates above
+         * have already decided the image may be served to anybody, and an old address serving the
+         * new image is exactly right. The flat address upstream spelled has no segment and keeps
+         * working; any other segment there is refused rather than silently ignored.
+         */
+        if (count($args) > 1 || ($args && !preg_match('/^[0-9a-f]{40}$/', (string) reset($args)))) {
+            return false;
+        }
+
         // Construct the file path (ogimages are typically stored in root path).
         $filepath = '/';
 
         // Retrieve the Open Graph image file from storage.
         $file = $fs->get_file($context->id, 'local_page', 'ogimage', $itemid, $filepath, $filename);
+
+        /*
+         * Served to anybody, so only a raster whose content is the type its name says: the upload
+         * accepted it by its extension alone, and an SVG saved as cover.png would otherwise go out
+         * under an image type. The editor refuses one on the way in; this covers a file that got
+         * into the area any other way. See \local_page\local\ogimage::is_image().
+         */
+        if ($file && !\local_page\local\ogimage::is_image($file)) {
+            return false;
+        }
     }
 
     // Check if file was found and is not a directory.

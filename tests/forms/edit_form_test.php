@@ -510,4 +510,47 @@ final class edit_form_test extends \advanced_testcase {
             'site-wide page, setting off'
         );
     }
+
+    /**
+     * An Open Graph image whose content is not the picture its name says is refused at save time.
+     *
+     * The author is a category manager, who holds local/page:managecategorypages — RISK_SPAM, not
+     * RISK_XSS — and the file goes out to anybody. The file manager accepts a file by its extension,
+     * so an SVG saved as cover.png arrives here looking like a PNG; so does a text file. An SVG under
+     * its own name is refused as well, whatever the element's own extension check says, because this
+     * rule is the one the file route and the head tags apply too. The real PNG is the control that
+     * the rule is about the file and not about the field being filled.
+     *
+     * @return void
+     */
+    public function test_an_og_image_that_is_not_the_picture_its_name_says_is_refused(): void {
+        $this->resetAfterTest();
+
+        $category = $this->getDataGenerator()->create_category();
+        $context = \core\context\coursecat::instance($category->id);
+        $author = $this->user_holding_at('local/page:managecategorypages', $context);
+        $this->setUser($author);
+
+        $contextid = \local_page\local\scope::stored_contextid($context);
+        $refused = [
+            'an SVG named cover.png' => [\local_page\tests\ogimage_fixture::svg(), 'cover.png'],
+            'a text file named cover.png' => ['not really a png', 'cover.png'],
+            'an SVG named cover.svg' => [\local_page\tests\ogimage_fixture::svg(), 'cover.svg'],
+        ];
+        foreach ($refused as $label => [$content, $filename]) {
+            $draftitemid = \local_page\tests\ogimage_fixture::draft((int) $author->id, $content, $filename);
+            $errors = $this->errors(['ogimage_filemanager' => $draftitemid, 'contextid' => $contextid], $context);
+            $this->assertArrayHasKey('ogimage_filemanager', $errors, $label);
+            $this->assertSame(get_string('edit_ogimage_notimage', 'local_page'), $errors['ogimage_filemanager'], $label);
+        }
+
+        // Control: the picture itself is accepted, under the same name, from the same author.
+        $png = \local_page\tests\ogimage_fixture::png(4, 3);
+        $draftitemid = \local_page\tests\ogimage_fixture::draft((int) $author->id, $png);
+        $errors = $this->errors(['ogimage_filemanager' => $draftitemid, 'contextid' => $contextid], $context);
+        $this->assertArrayNotHasKey('ogimage_filemanager', $errors);
+
+        // An empty field is no image to check.
+        $this->assertArrayNotHasKey('ogimage_filemanager', $this->errors(['contextid' => $contextid], $context));
+    }
 }

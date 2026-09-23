@@ -129,10 +129,14 @@ classes/route/controller/page.php  The routed address /local_page/category/{cate
 classes/shortlink_handler.php      Resolves the plugin's /p/ codes for core's shortlink route.
 classes/local/publicaccess.php  Fail-closed adapter: is this category public; who is a visitor.
 classes/local/scope.php     Which context a page lives in, and which capability governs it.
+classes/local/ogimage.php   A page's Open Graph image: which file, its hashed address, its size.
+classes/local/hook/output/before_standard_head_html_generation.php
+                            Writes the head tags a page registered (db/hooks.php).
 classes/url_rewriter.php    Friendly-URL rewriting (pairs with .htaccess).
-classes/output/             page_card, page_content, pages_list renderables.
-templates/                  Their Mustache counterparts.
-db/                         install.xml, upgrade.php, access.php, uninstall.php.
+classes/output/             page_card, page_content, pages_list renderables; opengraph, the head
+                            tags of a page (Open Graph, SEO name metas, robots, canonical).
+templates/                  Their Mustache counterparts; opengraph.mustache is property metas only.
+db/                         install.xml, upgrade.php, access.php, uninstall.php, hooks.php.
 .htaccess            SHIPS in the release zip — it is the friendly-URL feature,
                      not development scaffolding. Never export-ignore it.
 ```
@@ -270,6 +274,44 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php.
   `version.php` bump plus `mdl upgrade m502`, or `mdl purge m502`, is what makes
   it visible. PHPUnit never reads that cache, so the tests pass while the browser
   shows nothing, which is exactly the wrong way round to debug it.
+- **The head tags are a renderable registered for a hook, and `$CFG->additionalhtmlhead` is never
+  touched.** `local_page_render_view()` ends with `opengraph::set(opengraph::for_page(...))` when the
+  viewer may read the page and `opengraph::set(null)` when not, and registers LAST: the hook
+  (`before_standard_head_html_generation`, dispatched from `core_renderer::standard_head_html()` for
+  every page, error pages included) writes whatever is registered, so nothing that can still throw may
+  come after the registration. Upstream appended its tags to `$CFG->additionalhtmlhead` mid-request —
+  a site setting — and that must not come back. A change to `db/hooks.php` registers only after a
+  `version.php` bump and `mdl upgrade`; PHPUnit tests reach the callback directly and would pass while
+  the web shows nothing, so `test_the_callback_is_registered_for_the_head_hook` dispatches through
+  `\core\hook\manager::phpunit_get_instance()` on this plugin's own `db/hooks.php`.
+- **The mustache lint validates a template as body content**, where `<meta name=...>` and
+  `<link rel="canonical">` are invalid and RDFa `<meta property=...>` is not. So the template renders
+  the Open Graph property metas only, and the callback writes the name metas (description, keywords,
+  author, robots) and the canonical link as literal strings through `s()`. Every value is held in the
+  plain spelling (`format_string()` with escape off) and escaped exactly once where it is written; a
+  page name with a bare `&` is the fixture that proves it.
+- **An og image is only ever a raster whose content is the type its name says.** The file manager's
+  `accepted_types` (and the upload repository) judge a file by its NAME, and the file store types it
+  by that name, so an SVG saved as `cover.png` arrives typed `image/png`. `ogimage::is_image()` — one
+  of the accepted extensions AND core's `stored_file::is_valid_image()` (content type equals stored
+  type) — is asked by the editor's `validation()`, the file route and `ogimage::file()`; each call
+  site has its own gate. Neither half alone suffices: core counts a genuine SVG as a web image, and
+  the name check alone was the original hole. A route test must ask through `lib_test`'s
+  `ask_ogimage_route()`, which carries the ETag of the file the route would send: a mutated route
+  then answers 304, where it would otherwise write a PNG's binary bytes into the PHPUnit log, which
+  BSD grep reads as a binary file — and `mdl mutate` then finds no test count and aborts the sweep.
+- **The image's size comes from core's cache, keyed by content hash.** `stored_file::get_imageinfo()`
+  caches in `core/file_imageinfo` (`lib/filestorage/file_system.php`), so the plugin keeps no cache of
+  its own, and `save_page()` measures nothing: the draft is measured on the way in, under the same
+  content hash the stored file gets, by core's validation of a restricted file manager
+  (`file_get_all_files_in_draftarea()`) and by the form's content check (`is_valid_image()`). A
+  save-time measurement was written, swept silent (the `og_measure_at_save` gate reddened nothing) and
+  removed; `save_page_test` holds the property. A render after a purge measures on the spot. The image ADDRESS carries the content hash as a directory segment; the file
+  route accepts it or upstream's flat address, never compares it with the file (a cache key, not a
+  credential) and refuses any other segment. Only a refusal can be asserted through
+  `local_page_pluginfile()` in general — a served file reaches `readfile_accel()` — except with the
+  file's own ETag in `If-None-Match`, which answers 304 before a byte is written; `lib_test` uses that,
+  with the CLI's header warnings swallowed for the duration of the call.
 
 ## Testing notes
 

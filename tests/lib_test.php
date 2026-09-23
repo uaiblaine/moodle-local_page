@@ -446,7 +446,12 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Stores one file in the ogimage area under a page's id.
+     * Stores one real image in the ogimage area under a page's id.
+     *
+     * It is a real PNG, not text under an image's name, because the route refuses a file whose
+     * content is not the image its name says: a refusal test holding text would pass on that refusal
+     * whatever became of the gate it was written for. Its bytes are ogimage_png(), which is what
+     * ask_ogimage_route() is told to expect.
      *
      * @param int $pageid Page id, which is the itemid of the ogimage area.
      * @param string $filename File name to store.
@@ -463,8 +468,52 @@ final class lib_test extends \advanced_testcase {
                 'filepath' => '/',
                 'filename' => $filename,
             ],
-            'not really a png'
+            $this->ogimage_png()
         );
+    }
+
+    /**
+     * The bytes of the image store_ogimage() stores.
+     *
+     * @return string A 4 x 3 PNG
+     */
+    private function ogimage_png(): string {
+        return \local_page\tests\ogimage_fixture::png(4, 3);
+    }
+
+    /**
+     * Ask the og:image route for a file, the way a client already holding one particular file asks.
+     *
+     * The request carries that file's ETag in If-None-Match, so a file that IS sent is answered 304 by
+     * readfile_accel() before a byte is written or an output buffer touched, and with dontdie the call
+     * returns null — where every refusal returns false. That is what lets a positive serve be
+     * asserted at all, and it is what keeps a refusal test quiet when the guard it holds is mutated
+     * away: the file that then reaches the send is answered 304 too, instead of being written into
+     * PHPUnit's output, where a PNG's binary bytes make the mutation sweep's log unreadable to grep.
+     * Name the bytes of the file the route would send; a different file reaching the send is written
+     * out and fails the run rather than passing it.
+     *
+     * The send still calls header(), and a CLI process that has already printed PHPUnit's progress
+     * line answers every header() with "Cannot modify header information". Exactly that warning is
+     * swallowed while the route runs, and nothing else: any other warning falls through to PHP.
+     *
+     * @param \core\context $context Context the file is asked through.
+     * @param array $args The path after the file area: item id, optional hash segment, file name.
+     * @param string $content The bytes of the file the route would send, whose content hash is the ETag.
+     * @return bool|null False for a refusal, null for a file sent.
+     */
+    private function ask_ogimage_route(\core\context $context, array $args, string $content): ?bool {
+        $_SERVER['HTTP_IF_NONE_MATCH'] = '"' . sha1($content) . '"';
+        set_error_handler(
+            static fn (int $errno, string $errstr): bool => str_starts_with($errstr, 'Cannot modify header information'),
+            E_WARNING
+        );
+        try {
+            return \local_page_pluginfile(null, null, $context, 'ogimage', $args, false, ['dontdie' => true]);
+        } finally {
+            restore_error_handler();
+            unset($_SERVER['HTTP_IF_NONE_MATCH']);
+        }
     }
 
     /**
@@ -606,10 +655,9 @@ final class lib_test extends \advanced_testcase {
     /**
      * pluginfile.php will not hand out the og:image of a page that is not published.
      *
-     * The refusal is asserted rather than the positive serve on purpose: serving a file reaches
-     * readfile_accel(), whose `while (ob_get_level())` loop closes every output buffer there is —
-     * PHPUnit's included — before writing the bytes to stdout. So the positive direction is held
-     * by the predicate tests above, and the control here is that the file really is in the area.
+     * The control here is that the file really is in the area, and that it is a real image, so the
+     * refusal is the publication gate's and not a missing file or the content check. The positive
+     * direction is test_the_ogimage_route_serves_the_hashed_and_the_flat_address().
      *
      * @return void
      */
@@ -640,32 +688,126 @@ final class lib_test extends \advanced_testcase {
             );
 
             $this->assertFalse(
-                \local_page_pluginfile(
-                    null,
-                    null,
-                    $context,
-                    'ogimage',
-                    [(int) $page->id, 'og.png'],
-                    false,
-                    ['dontdie' => true]
-                ),
+                $this->ask_ogimage_route($context, [(int) $page->id, 'og.png'], $this->ogimage_png()),
                 "{$label}: pluginfile refuses the image"
             );
         }
 
         // An itemid naming no row at all is refused before the file store is consulted.
         $this->assertFalse(
-            \local_page_pluginfile(
-                null,
-                null,
-                $context,
-                'ogimage',
-                [(int) $refused['draft']->id + 100000, 'og.png'],
-                false,
-                ['dontdie' => true]
-            ),
+            $this->ask_ogimage_route($context, [(int) $refused['draft']->id + 100000, 'og.png'], $this->ogimage_png()),
             'unknown itemid'
         );
+    }
+
+    /**
+     * The og:image route serves the hashed address the head tags hand out, and upstream's flat one.
+     *
+     * A POSITIVE serve can be asserted because the request carries the file's own ETag: see
+     * ask_ogimage_route() for how a sent file is told from a refused one without a byte written.
+     *
+     * @return void
+     */
+    public function test_the_ogimage_route_serves_the_hashed_and_the_flat_address(): void {
+        $this->resetAfterTest();
+
+        $system = \context_system::instance();
+        $page = $this->pages()->create_page();
+        $png = \local_page\tests\ogimage_fixture::png(4, 3);
+        \local_page\tests\ogimage_fixture::store($system, (int) $page->id, $png, 'og.png');
+
+        $addresses = [
+            'hashed' => [(int) $page->id, sha1($png), 'og.png'],
+            'flat' => [(int) $page->id, 'og.png'],
+        ];
+
+        foreach ($addresses as $label => $args) {
+            $this->assertNull($this->ask_ogimage_route($system, $args, $png), "{$label}: the image is sent");
+        }
+
+        // Control: a segment that is not a content hash is refused, not ignored.
+        $this->assertFalse($this->ask_ogimage_route($system, [(int) $page->id, 'other', 'og.png'], $png));
+    }
+
+    /**
+     * The hashed address meets the same gates as the flat one: publication state and context.
+     *
+     * @return void
+     */
+    public function test_the_hashed_ogimage_address_meets_the_same_gates(): void {
+        $this->resetAfterTest();
+
+        $system = \context_system::instance();
+        $category = $this->getDataGenerator()->create_category();
+        $categorycontext = \core\context\coursecat::instance((int) $category->id);
+        $png = \local_page\tests\ogimage_fixture::png(4, 3);
+
+        $draft = $this->pages()->create_page(['status' => 'draft']);
+        $draftfile = \local_page\tests\ogimage_fixture::store($system, (int) $draft->id, $png, 'og.png');
+
+        // A published page, its image stored in the OTHER context from the one it belongs to.
+        $sitepage = $this->pages()->create_page();
+        $foreignfile = \local_page\tests\ogimage_fixture::store($categorycontext, (int) $sitepage->id, $png, 'og.png');
+
+        // Controls: both files are in the areas asked, and the second page is published.
+        $this->assertSame((int) $draft->id, (int) $draftfile->get_itemid());
+        $this->assertSame((int) $sitepage->id, (int) $foreignfile->get_itemid());
+        $this->assertTrue(\local_page_ogimage_is_servable($sitepage));
+
+        $this->assertFalse(
+            $this->ask_ogimage_route($system, [(int) $draft->id, sha1($png), 'og.png'], $png),
+            'a draft page\'s image, at its hashed address'
+        );
+        $this->assertFalse(
+            $this->ask_ogimage_route($categorycontext, [(int) $sitepage->id, sha1($png), 'og.png'], $png),
+            'a site-wide page\'s image through a category context, at its hashed address'
+        );
+    }
+
+    /**
+     * The route refuses a file whose content is not the image its name says, and serves the one that is.
+     *
+     * The files sit side by side in the area of one published page, so the publication and the
+     * context gates answer the same for all of them and only the file itself tells them apart. The
+     * .png ones are typed image/png by their name; the SVG is what an author could upload as
+     * cover.png, and the extension check alone let it through. The same SVG under its own name is
+     * refused by name: core counts an SVG as a web image, so the content check alone would pass it.
+     *
+     * @return void
+     */
+    public function test_the_ogimage_route_refuses_a_file_that_is_not_the_image_its_name_says(): void {
+        $this->resetAfterTest();
+
+        $system = \context_system::instance();
+        $page = $this->pages()->create_page();
+        $png = \local_page\tests\ogimage_fixture::png(4, 3);
+        $svg = \local_page\tests\ogimage_fixture::svg();
+
+        $files = [
+            'og.png' => $png,
+            'script.png' => $svg,
+            'text.png' => 'not really a png',
+            'script.svg' => $svg,
+        ];
+        foreach ($files as $filename => $content) {
+            \local_page\tests\ogimage_fixture::store($system, (int) $page->id, $content, $filename);
+        }
+
+        // Control: the real image is served, at both of its addresses.
+        $this->assertNull($this->ask_ogimage_route($system, [(int) $page->id, sha1($png), 'og.png'], $png));
+        $this->assertNull($this->ask_ogimage_route($system, [(int) $page->id, 'og.png'], $png));
+
+        foreach (['script.png', 'text.png', 'script.svg'] as $filename) {
+            $content = $files[$filename];
+            $this->assertFalse(
+                $this->ask_ogimage_route($system, [(int) $page->id, sha1($content), $filename], $content),
+                "{$filename}, at its hashed address"
+            );
+            $this->assertFalse(
+                $this->ask_ogimage_route($system, [(int) $page->id, $filename], $content),
+                "{$filename}, at its flat address"
+            );
+        }
     }
 
     /**
@@ -885,10 +1027,10 @@ final class lib_test extends \advanced_testcase {
      * move made by hand, and it is what makes the contextid clause in the lookup load-bearing
      * instead of incidental: without it the row is found by id alone and this context serves it.
      *
-     * Only refusals are asserted through local_page_pluginfile(), for the reason the og:image
-     * tests give: a successful serve reaches readfile_accel(), which closes every output buffer
-     * PHPUnit has. The positive direction is held by the controls, which show the page viewable
-     * and each fixture file really present in the area the call is refusing to read from.
+     * Only refusals are asserted through local_page_pluginfile(), because a successful serve
+     * reaches readfile_accel(), which closes every output buffer PHPUnit has. The positive
+     * direction is held by the controls, which show the page viewable and each fixture file really
+     * present in the area the call is refusing to read from.
      *
      * @return void
      */
@@ -1051,28 +1193,12 @@ final class lib_test extends \advanced_testcase {
         );
 
         $this->assertFalse(
-            \local_page_pluginfile(
-                null,
-                null,
-                $categorycontext,
-                'ogimage',
-                [(int) $sitepage->id, 'og.png'],
-                false,
-                ['dontdie' => true]
-            ),
+            $this->ask_ogimage_route($categorycontext, [(int) $sitepage->id, 'og.png'], $this->ogimage_png()),
             'a category context may not serve a site-wide page image'
         );
 
         $this->assertFalse(
-            \local_page_pluginfile(
-                null,
-                null,
-                $system,
-                'ogimage',
-                [(int) $categorypage->id, 'og.png'],
-                false,
-                ['dontdie' => true]
-            ),
+            $this->ask_ogimage_route($system, [(int) $categorypage->id, 'og.png'], $this->ogimage_png()),
             'the system context may not serve a category page image'
         );
     }
