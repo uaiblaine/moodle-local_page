@@ -71,6 +71,58 @@ function local_page_ogimage_filemanager_options(): array {
 }
 
 /**
+ * Whether a timestamp falls inside a page's publish window.
+ *
+ * A bound of 0 (or a missing one) means no bound. local_page_user_can_view_page() and
+ * local_page_ogimage_is_servable() both read the window through this function, so a page and its
+ * Open Graph image cannot disagree about when the page is published.
+ *
+ * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
+ * @param int $now Unix timestamp to test the window against
+ * @return bool
+ */
+function local_page_publish_window_is_open(object $page, int $now): bool {
+    $start = (int) ($page->pagedate ?? 0);
+    $end = (int) ($page->enddate ?? 0);
+
+    if ($start > 0 && $start > $now) {
+        return false;
+    }
+    if ($end > 0 && $end < $now) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Whether a page's Open Graph image may be served through pluginfile.php, to anybody.
+ *
+ * True only for a saved page that is not deleted, has status 'live' and is inside its publish window.
+ *
+ * It deliberately reads no capability, access level or "only logged in" flag: an og:image URL is fetched
+ * by link-preview scrapers, which are anonymous, and index.php hands the URL out only to a viewer who has
+ * passed local_page_user_can_view_page(). What it does enforce is that a draft, archived, expired, not yet
+ * started or deleted page has no published image, whoever asks for it.
+ *
+ * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
+ * @return bool
+ */
+function local_page_ogimage_is_servable(object $page): bool {
+    if ((int) ($page->id ?? 0) <= 0) {
+        return false;
+    }
+    if ((int) ($page->deleted ?? 0) !== 0) {
+        return false;
+    }
+    if (($page->status ?? '') !== 'live') {
+        return false;
+    }
+
+    return local_page_publish_window_is_open($page, time());
+}
+
+/**
  * Whether the current user may view a local page under the same rules as the public renderer.
  *
  * Mirrors local_page_renderer::showpage() access checks (status, dates, onlyloggedin, accesslevel,
@@ -128,16 +180,7 @@ function local_page_user_can_view_page(object $page): bool {
         return $canaccess && $permissions;
     }
 
-    $now = time();
-    if ($page->pagedate > 0 && $page->enddate > 0) {
-        $istimevalid = $page->pagedate <= $now && $page->enddate >= $now && $page->status === 'live' && $permissions;
-    } else if ($page->pagedate > 0 && $page->enddate <= 0) {
-        $istimevalid = $page->pagedate <= $now && $page->status === 'live' && $permissions;
-    } else if ($page->pagedate <= 0 && $page->enddate > 0) {
-        $istimevalid = $page->enddate >= $now && $page->status === 'live' && $permissions;
-    } else {
-        $istimevalid = $page->status === 'live' ? $permissions : false;
-    }
+    $istimevalid = local_page_publish_window_is_open($page, time()) && $page->status === 'live' && $permissions;
 
     return $canaccess && $istimevalid;
 }
@@ -281,6 +324,7 @@ function local_page_user_can_serve_pagecontent_file(int $contextid, string $file
  * @return bool false if the file not found, just send the file otherwise and do not return anything
  */
 function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $args, $forcedownload, array $options = []) {
+    global $DB;
 
     // Check the contextlevel is as expected for local plugins.
     if ($context->contextlevel != CONTEXT_SYSTEM) {
@@ -341,6 +385,12 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
     } else if ($filearea === 'ogimage') {
         // For ogimage, we expect the itemid to be in the args.
         $itemid = array_shift($args); // Get the item ID for the Open Graph image.
+
+        // The item id is the page id: serve the image only while that page is published, whoever asks.
+        $ogimagepage = $DB->get_record('local_page', ['id' => (int) $itemid]);
+        if (!$ogimagepage || !local_page_ogimage_is_servable($ogimagepage)) {
+            return false;
+        }
 
         // Construct the file path (ogimages are typically stored in root path).
         $filepath = '/';

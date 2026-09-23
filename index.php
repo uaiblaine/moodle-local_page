@@ -97,8 +97,11 @@ if (!$canview) {
         }
     }
 
+    // Advertise the image only when pluginfile.php will serve it; see local_page_ogimage_is_servable().
     $fs = get_file_storage();
-    $files = $fs->get_area_files($context->id, 'local_page', 'ogimage', $custompage->id, 'sortorder', false);
+    $files = local_page_ogimage_is_servable($custompage)
+        ? $fs->get_area_files($context->id, 'local_page', 'ogimage', $custompage->id, 'sortorder', false)
+        : [];
 
     if ($files) {
         $file = reset($files);
