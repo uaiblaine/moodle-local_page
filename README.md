@@ -29,7 +29,7 @@ instead of
 ### Incoming URL routing
 
 - **This plugin’s `.htaccess`** (under `local/page/`) asks Apache to rewrite  
-  `…/local/page/<slug>` → `…/local/page/index.php?menuname=<slug>` when `mod_rewrite` and `AllowOverride` allow it. Slugs use the same character set as the form (`PARAM_ALPHANUMEXT`, including `.`). It does **not** handle **root-level** paths like `…/about-us` (those never hit this directory).
+  `…/local/page/<slug>` → `…/local/page/index.php?menuname=<slug>` when `mod_rewrite` and `AllowOverride` allow it. Slugs use the same character set as the form (`PARAM_ALPHANUMEXT`). It does **not** handle **root-level** paths like `…/about-us` (those never hit this directory).
 - Moodle’s optional **`$CFG->urlrewriteclass`** only rewrites **outgoing** URLs from `moodle_url::out()`; it does **not** accept incoming requests by itself.
 
 So for **short** URLs like `/about-us` at the site root, add **web-root** rewrite rules (below). For **only** `/local/page/about-us`, configuring the server to honour this plugin’s `.htaccess` is enough.
@@ -48,7 +48,7 @@ RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^([a-zA-Z0-9_-]+)$ /local/page/index.php?menuname=$1 [L,QSA]
 ```
 
-To match the edit form’s slug rules exactly (including `.` in the slug), use `[a-zA-Z0-9._-]+` instead of `[a-zA-Z0-9_-]+` in both `RewriteRule` and Nginx patterns.
+`[a-zA-Z0-9_-]+` already matches the edit form’s slug rules exactly: `menuname` is cleaned with `PARAM_ALPHANUMEXT`, which keeps only letters, digits, `_` and `-`, so no saved slug contains a dot. Do not add `.` to the pattern: it would only capture requests this plugin can never answer, including `index.php` (see **Ordering** below).
 
 If Moodle is under `/moodle/`, use `RewriteRule ^([a-zA-Z0-9_-]+)$ /moodle/local/page/index.php?menuname=$1 [L,QSA]` (or `RewriteBase /moodle/` and a relative target—match your layout).
 
@@ -63,6 +63,8 @@ location ~ ^/([a-zA-Z0-9_-]+)$ {
 Again, prefix with your Moodle base path if not at domain root.
 
 **Conflicts**: A catch-all slug rule can shadow other single-segment routes. Restrict slugs in the rule, reserve paths, or place this rule after more specific locations.
+
+**Ordering**: NGINX uses the **first matching regex `location` in declaration order**, so a regex slug location must come **after** the `location ~ \.php$` block that passes PHP to PHP-FPM. Declared before it, a slug pattern that admits a dot, such as `^/([a-zA-Z0-9._-]+)$`, matches `/index.php`, and `try_files $uri` then serves the PHP source as a static file instead of running it. On Moodle 5.1 and later with the routing engine configured (`$CFG->routerconfigured = true`), the server also sends every unmatched path to `r.php`; a root-level slug rule must answer before that fallback, or the router replies first and the slug never reaches this plugin.
 
 ### Optional: shorten links Moodle prints (`urlrewriteclass`)
 
