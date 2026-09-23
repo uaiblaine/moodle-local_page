@@ -78,6 +78,24 @@ told from the ones that do not, and a reader of a page kept for logged-in users 
 form and back to the page. The same rule governs the files a category page embeds. A logged-in user never meets it: what they may read is decided by the page's own status,
 publish window, "only logged-in users" flag and access level, in the category's context.
 
+### When a category is deleted or moved
+
+Moodle offers two ways to delete a course category, and its pages follow each of them.
+
+- **Deleting it with all its content.** Its pages are deleted with it, the way the pages screen
+  deletes one: they stop answering, their friendly URLs are released and their short codes removed,
+  and their files go with the category. A subcategory deleted along with it gives the same treatment
+  to its own pages.
+- **Deleting it and moving its content to another category.** Its pages move to that category with
+  their files — the image and everything the text embeds — and answer at the new category's address.
+  A short code keeps working and now leads to the new address. A page whose friendly URL the new
+  category already uses gets its id appended (`contato` becomes `contato-42`); the page that was
+  already there keeps its address. Subcategories move as they are, pages included.
+
+Moving the content to the top level, outside any category, is refused while the category holds a
+page: a page belongs to a category or to the site. Moodle's own screens never offer that target, and
+Moodle cannot complete that move anyway.
+
 ### Sharing a page: Open Graph
 
 When a link to a page is pasted into a messaging app or a social network, the app fetches the page

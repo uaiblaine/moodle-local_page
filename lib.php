@@ -167,6 +167,42 @@ function local_page_extend_navigation_category_settings(
 }
 
 /**
+ * Soft-deletes the pages of a category core is deleting with all its content.
+ *
+ * Core calls this for every plugin declaring it, from core_course_category::delete_full(), before it
+ * deletes anything. What it deletes afterwards is why nothing but the rows is touched here: the
+ * category's children (each through its own delete_full(), which calls this again for that child),
+ * its courses and content, the category row and finally the category's CONTEXT, which purges every
+ * file stored in it — the pages' files included.
+ *
+ * @param \stdClass $category The category's record, as core_course_category::get_db_record() returns it
+ * @return void
+ */
+function local_page_pre_course_category_delete(\stdClass $category): void {
+    \local_page\local\lifecycle::category_deleted((int) $category->id);
+}
+
+/**
+ * Carries the pages of a category to the category its content is being moved to.
+ *
+ * Core calls this for every plugin declaring it, from core_course_category::delete_move(), before it
+ * moves anything. Afterwards it re-parents the children, moves the courses and the content bank,
+ * then deletes the category row and the category's CONTEXT, which purges every file still stored in
+ * it — so the pages' files are moved out by the time this returns, and the rows follow them.
+ *
+ * @param \core_course_category $category The category being deleted
+ * @param \core_course_category $newparentcat The category its content moves to; the root pseudo-category has id 0
+ * @return void
+ * @throws \moodle_exception When the move cannot carry the pages, see lifecycle::category_moved()
+ */
+function local_page_pre_course_category_delete_move(
+    \core_course_category $category,
+    \core_course_category $newparentcat
+): void {
+    \local_page\local\lifecycle::category_moved((int) $category->id, (int) $newparentcat->id);
+}
+
+/**
  * Whether $now falls inside a page's publish window.
  *
  * A bound of 0 (or missing) means "no bound", so a row with neither date set is always inside its

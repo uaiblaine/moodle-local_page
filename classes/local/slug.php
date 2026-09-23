@@ -237,6 +237,37 @@ final class slug {
     }
 
     /**
+     * The slug a live page may carry in a context it is arriving in.
+     *
+     * Its own, when no other live page of that context holds it. Otherwise the page gains its id,
+     * which is how normalise_all() settles a duplicate, and the page already there keeps its
+     * address. Should that suffixed form be taken as well — only a slug typed by hand can hold it —
+     * a counter follows the id until the value is free, so the result is never a duplicate.
+     *
+     * Nothing is written here, and the answer is only as good as the moment it was read: the caller
+     * holds the lock the editor's save takes, so no save can take the value before it is stored.
+     *
+     * @param string $menuname The page's slug as stored
+     * @param int $id The page id, excluded from the comparison
+     * @param int $contextid Stored contextid of the context the page is arriving in
+     * @return string The slug to store: the one given when it is free
+     */
+    public static function unique_in_context(string $menuname, int $id, int $contextid): string {
+        if (!self::is_taken($menuname, $id, $contextid)) {
+            return $menuname;
+        }
+
+        $base = \core_text::strtolower(trim($menuname));
+        $candidate = self::suffixed($base, $id);
+        for ($counter = 2; self::is_taken($candidate, $id, $contextid); $counter++) {
+            $suffix = '-' . $id . '-' . $counter;
+            $candidate = self::stem($base, $suffix) . $suffix;
+        }
+
+        return $candidate;
+    }
+
+    /**
      * The slug a duplicate is moved to: the original with -<id> appended.
      *
      * @param string $menuname Slug that was already taken

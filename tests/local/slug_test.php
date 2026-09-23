@@ -413,4 +413,39 @@ final class slug_test extends \advanced_testcase {
         $this->assertSame(0, slug::normalise_all());
         $this->assertSame($after, $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname'));
     }
+
+    /**
+     * A page arriving in a context keeps a free slug, gains its id on a taken one, and a counter after that.
+     *
+     * The second context holds the same slugs and changes nothing: the answer is the arriving
+     * context's alone.
+     *
+     * @return void
+     */
+    public function test_unique_in_context_keeps_a_free_slug_and_suffixes_a_taken_one(): void {
+        $this->resetAfterTest();
+
+        $there = (int) $this->getDataGenerator()->create_category()->id;
+        $elsewhere = (int) $this->getDataGenerator()->create_category()->id;
+        $scope = $this->category_scope($there);
+
+        $arriving = $this->pages()->create_category_page($elsewhere, ['menuname' => 'contato']);
+        $id = (int) $arriving->id;
+        $this->pages()->create_category_page($elsewhere, ['menuname' => 'sobre']);
+
+        $this->assertSame('contato', slug::unique_in_context('contato', $id, $scope), 'Free: kept.');
+        $this->assertSame('sobre', slug::unique_in_context('sobre', $id, $scope), 'Held elsewhere only: kept.');
+
+        $this->pages()->create_category_page($there, ['menuname' => 'contato']);
+        $this->assertSame("contato-{$id}", slug::unique_in_context('contato', $id, $scope), 'Taken: the id follows.');
+
+        $this->pages()->create_category_page($there, ['menuname' => "contato-{$id}"]);
+        $this->assertSame("contato-{$id}-2", slug::unique_in_context('contato', $id, $scope), 'That too: a counter follows.');
+
+        $this->pages()->create_category_page($there, ['menuname' => "contato-{$id}-2"]);
+        $this->assertSame("contato-{$id}-3", slug::unique_in_context('contato', $id, $scope));
+
+        // The page itself is never its own rival: its own row in the context does not take the slug.
+        $this->assertSame('contato', slug::unique_in_context('contato', $id, $this->category_scope($elsewhere)));
+    }
 }

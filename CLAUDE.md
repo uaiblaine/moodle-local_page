@@ -130,6 +130,8 @@ classes/shortlink_handler.php      Resolves the plugin's /p/ codes for core's sh
 classes/local/publicaccess.php  Fail-closed adapter: is this category public; who is a visitor.
 classes/local/scope.php     Which context a page lives in, and which capability governs it.
 classes/local/ogimage.php   A page's Open Graph image: which file, its hashed address, its size.
+classes/local/lifecycle.php What a category's deletion does to its pages; lib.php's two
+                            pre_course_category_* callbacks delegate to it.
 classes/local/hook/output/before_standard_head_html_generation.php
                             Writes the head tags a page registered (db/hooks.php).
 classes/url_rewriter.php    Friendly-URL rewriting (pairs with .htaccess).
@@ -312,6 +314,26 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php,
   `local_page_pluginfile()` in general — a served file reaches `readfile_accel()` — except with the
   file's own ETag in `If-None-Match`, which answers 304 before a byte is written; `lib_test` uses that,
   with the CLI's header warnings swallowed for the duration of the call.
+
+- **Core deletes the category's CONTEXT in both of its delete paths, so the files move inside the
+  callback or not at all.** `delete_full()` and `delete_move()` (`course/classes/category.php`) call
+  `local_page_pre_course_category_delete()` / `..._delete_move()` before anything else and end with
+  `$context->delete()`, which purges every component's files there. `lifecycle::category_moved()`
+  therefore moves both areas (`move_area_files_to_new_context()`, item id = page id) BEFORE it
+  re-points the row, and re-checks the slug in the new context under the save path's `menuname`
+  lock. A child category's pages are never the parent callback's business: `delete_full()` recurses
+  and calls the callback for each child itself, and `delete_move()` re-parents children with their own
+  contexts. A move to the root is refused (`movecatcontentstoroot`, core's own WS error) while the
+  category holds a live page — core cannot complete that move anyway: it dies resolving the root's
+  category context after the callbacks. The callbacks are found through `get_plugins_with_function()`,
+  so a change to them needs the version bump and `mdl upgrade` like any other `lib.php` callback.
+- **Other plugins declare the same category callbacks and run first.** `local_dimensions`
+  (alphabetically before `local_page`) implements `pre_course_category_delete_move()` on the fleet
+  stacks and dies on a root target with a database error of its own. `lib_test`'s root test therefore
+  deletes through a category built like core's `category_hooks_test` mock — real in everything but
+  `get_plugins_callback_function()`, which names this plugin's callbacks alone. The other lifecycle
+  tests go through the unmocked class, so they also prove the plugin coexists with whatever else the
+  stack has installed.
 
 ## Testing notes
 

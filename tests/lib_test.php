@@ -53,6 +53,10 @@ require_once($CFG->dirroot . '/local/page/lib.php');
  *   local/page:addpages is RISK_XSS (db/access.php:33), so the editor-preview
  *   branch is unreachable for them by construction.
  *
+ * The category callbacks at the end of the file are driven through core_course_category's own
+ * delete_full() and delete_move(), because what they must survive — core deleting the category's
+ * context, and every file in it, once they return — is core's, and only a real deletion shows it.
+ *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -66,6 +70,8 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 #[CoversFunction('local_page_user_can_serve_pagecontent_file')]
 #[CoversFunction('local_page_page_in_context')]
 #[CoversFunction('local_page_save_target_context')]
+#[CoversFunction('local_page_pre_course_category_delete')]
+#[CoversFunction('local_page_pre_course_category_delete_move')]
 final class lib_test extends \advanced_testcase {
     /**
      * The plugin's own data generator.
@@ -503,13 +509,29 @@ final class lib_test extends \advanced_testcase {
      * @return bool|null False for a refusal, null for a file sent.
      */
     private function ask_ogimage_route(\core\context $context, array $args, string $content): ?bool {
+        return $this->ask_file_route($context, 'ogimage', $args, $content);
+    }
+
+    /**
+     * Ask the file route for a file of either area, the way ask_ogimage_route() asks for an image.
+     *
+     * The If-None-Match idiom works for any stored file — readfile_accel() compares it with the
+     * file's content hash — so a pagecontent file that IS sent answers null, with no byte written.
+     *
+     * @param \core\context $context Context the file is asked through.
+     * @param string $filearea The file area: pagecontent or ogimage.
+     * @param array $args The path after the file area: item id, optional segments, file name.
+     * @param string $content The bytes of the file the route would send, whose content hash is the ETag.
+     * @return bool|null False for a refusal, null for a file sent.
+     */
+    private function ask_file_route(\core\context $context, string $filearea, array $args, string $content): ?bool {
         $_SERVER['HTTP_IF_NONE_MATCH'] = '"' . sha1($content) . '"';
         set_error_handler(
             static fn (int $errno, string $errstr): bool => str_starts_with($errstr, 'Cannot modify header information'),
             E_WARNING
         );
         try {
-            return \local_page_pluginfile(null, null, $context, 'ogimage', $args, false, ['dontdie' => true]);
+            return \local_page_pluginfile(null, null, $context, $filearea, $args, false, ['dontdie' => true]);
         } finally {
             restore_error_handler();
             unset($_SERVER['HTTP_IF_NONE_MATCH']);
@@ -1379,5 +1401,321 @@ final class lib_test extends \advanced_testcase {
         $predicate::reset_caches();
         $this->setUser(null);
         $this->assertTrue(\local_page_user_can_view_page($page), 'made public for real, the visitor may read it');
+    }
+
+    /**
+     * A public short code for a page, written straight into core's table.
+     *
+     * @param int $pageid Page id.
+     * @return void
+     */
+    private function seed_code(int $pageid): void {
+        global $DB;
+
+        $DB->insert_record('shortlink', (object) [
+            'shortcode' => 'code' . $pageid,
+            'userid' => 0,
+            'component' => \local_page\local\links::COMPONENT,
+            'linktype' => \local_page\local\links::LINKTYPE,
+            'identifier' => (string) $pageid,
+        ]);
+    }
+
+    /**
+     * How many public short codes a page has.
+     *
+     * @param int $pageid Page id.
+     * @return int
+     */
+    private function code_count(int $pageid): int {
+        global $DB;
+
+        return $DB->count_records('shortlink', ['component' => 'local_page', 'identifier' => (string) $pageid]);
+    }
+
+    /**
+     * How many files of one area a page holds in a context.
+     *
+     * @param int $contextid Context id, which need not exist any more.
+     * @param string $filearea File area.
+     * @param int $pageid Page id, the area's item id.
+     * @return int
+     */
+    private function area_count(int $contextid, string $filearea, int $pageid): int {
+        return count(get_file_storage()->get_area_files($contextid, 'local_page', $filearea, $pageid, 'id', false));
+    }
+
+    /**
+     * A category page with a file in each area and a public short code, the way a saved page has them.
+     *
+     * @param int $categoryid Course category id.
+     * @param string $slug The page's friendly URL.
+     * @return \stdClass The stored row.
+     */
+    private function furnished_category_page(int $categoryid, string $slug): \stdClass {
+        $contextid = (int) \core\context\coursecat::instance($categoryid)->id;
+        $page = $this->pages()->create_category_page($categoryid, [
+            'menuname' => $slug,
+            'pagecontent' => '<p><img src="@@PLUGINFILE@@/body.png" alt=""></p>',
+        ]);
+        $this->store_ogimage((int) $page->id, 'og.png', $contextid);
+        $this->store_pagecontent_file($contextid, (int) $page->id, 'body.png');
+        $this->seed_code((int) $page->id);
+
+        return $page;
+    }
+
+    /**
+     * A category that calls this plugin's category callbacks and no other plugin's.
+     *
+     * Built the way core's course/tests/category_hooks_test.php builds its mock: a real
+     * core_course_category over the category's record, with get_plugins_callback_function() alone
+     * replaced, so every other step of delete_full() and delete_move() is core's own.
+     *
+     * @param int $categoryid Course category id.
+     * @return \core_course_category
+     */
+    private function category_calling_only_this_plugin(int $categoryid): \core_course_category {
+        $category = $this->getMockBuilder(\core_course_category::class)
+            ->onlyMethods(['get_plugins_callback_function'])
+            ->disableOriginalConstructor()
+            ->getMock();
+        $category->method('get_plugins_callback_function')->willReturnCallback(
+            static fn (string $name): array => function_exists("local_page_{$name}") ? ["local_page_{$name}"] : []
+        );
+        (new \ReflectionClass(\core_course_category::class))->getConstructor()->invoke(
+            $category,
+            \core_course_category::get($categoryid)->get_db_record()
+        );
+
+        return $category;
+    }
+
+    /**
+     * Deleting a category through core soft-deletes its pages and its children's, and nobody else's.
+     *
+     * Core calls the callback for the category and, through its own recursion, for the child: the
+     * class handles one context at a time (lifecycle_test shows it leaving a child's page live), so a
+     * child page found deleted here is core's recursion at work. Each page loses its slug and its short
+     * code, and its files go with the context core deletes. The sibling is the plan's control: still
+     * live, still holding its address and its code, and its image and embedded file still served.
+     *
+     * @return void
+     */
+    public function test_deleting_a_category_soft_deletes_its_pages_and_its_childrens_only(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $categories = [];
+        $categories['category'] = (int) $this->getDataGenerator()->create_category()->id;
+        $categories['child'] = (int) $this->getDataGenerator()->create_category(['parent' => $categories['category']])->id;
+        $categories['sibling'] = (int) $this->getDataGenerator()->create_category()->id;
+        $contexts = [];
+        $pages = [];
+        foreach ($categories as $label => $categoryid) {
+            $contexts[$label] = (int) \core\context\coursecat::instance($categoryid)->id;
+            $pages[$label] = $this->furnished_category_page($categoryid, 'handbook');
+        }
+        $handler = new \local_page\shortlink_handler();
+
+        \core_course_category::get($categories['category'])->delete_full(false);
+
+        foreach (['category', 'child'] as $label) {
+            $pageid = (int) $pages[$label]->id;
+            $row = $DB->get_record('local_page', ['id' => $pageid], '*', MUST_EXIST);
+            $this->assertSame(1, (int) $row->deleted, "{$label}: soft-deleted");
+            $released = \local_page\local\slug::deleted_name('handbook', $pageid);
+            $this->assertSame($released, $row->menuname, "{$label}: slug released");
+            $this->assertSame(0, $this->code_count($pageid), "{$label}: short code removed");
+            $this->assertNull($handler->process_shortlink('page', (string) $pageid), "{$label}: the code answers nothing");
+            $this->assertFalse(\core\context::instance_by_id($contexts[$label], IGNORE_MISSING), "{$label}: context deleted");
+            $this->assertSame(0, $this->area_count($contexts[$label], 'ogimage', $pageid), "{$label}: image purged");
+            $this->assertSame(0, $this->area_count($contexts[$label], 'pagecontent', $pageid), "{$label}: body file purged");
+        }
+
+        // Control: the sibling category's page is untouched and still serves its files.
+        $pageid = (int) $pages['sibling']->id;
+        $row = $DB->get_record('local_page', ['id' => $pageid], '*', MUST_EXIST);
+        $this->assertSame(0, (int) $row->deleted, 'sibling: live');
+        $this->assertSame('handbook', $row->menuname, 'sibling: slug kept');
+        $this->assertSame(1, $this->code_count($pageid), 'sibling: short code kept');
+        $this->assertNotNull($handler->process_shortlink('page', (string) $pageid), 'sibling: the code answers');
+        $siblingcontext = \core\context::instance_by_id($contexts['sibling']);
+        $this->assertNull(
+            $this->ask_ogimage_route($siblingcontext, [$pageid, 'og.png'], $this->ogimage_png()),
+            'sibling: image served'
+        );
+        $this->assertNull(
+            $this->ask_file_route($siblingcontext, 'pagecontent', [$pageid, 'body.png'], 'not really a png'),
+            'sibling: body file served'
+        );
+    }
+
+    /**
+     * Deleting a category with its content moved carries its pages, and both their file areas, to the new parent.
+     *
+     * Core deletes the old context — and every file still in it — after the callback returns, so a
+     * file found in the new context here is one the callback moved in time. The page then answers at
+     * the new category's address with its embedded file rewritten to the new context, its image is
+     * served there, and its short code resolves to the new address. The child category moves under
+     * the new parent with a context of its own, so its page stays where it is; the sibling is the
+     * plan's control and is untouched.
+     *
+     * @return void
+     */
+    public function test_moving_a_categorys_content_carries_its_pages_and_their_files(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $child = (int) $this->getDataGenerator()->create_category(['parent' => $category])->id;
+        $target = (int) $this->getDataGenerator()->create_category()->id;
+        $sibling = (int) $this->getDataGenerator()->create_category()->id;
+        $old = (int) \core\context\coursecat::instance($category)->id;
+        $new = (int) \core\context\coursecat::instance($target)->id;
+        $childcontext = (int) \core\context\coursecat::instance($child)->id;
+        $siblingcontext = (int) \core\context\coursecat::instance($sibling)->id;
+
+        $page = $this->furnished_category_page($category, 'handbook');
+        $pageid = (int) $page->id;
+        $childpage = $this->furnished_category_page($child, 'guide');
+        $siblingpage = $this->furnished_category_page($sibling, 'handbook');
+
+        \core_course_category::get($category)->delete_move($target);
+
+        // The row names the new category, and the files are in its context: the old one is gone.
+        $row = $DB->get_record('local_page', ['id' => $pageid], '*', MUST_EXIST);
+        $this->assertSame($new, (int) $row->contextid);
+        $this->assertSame($target, (int) $row->categoryid);
+        $this->assertSame(0, (int) $row->deleted);
+        $this->assertSame('handbook', $row->menuname, 'A slug free in the new parent is kept.');
+        $this->assertFalse(\core\context::instance_by_id($old, IGNORE_MISSING), 'Core deleted the old context.');
+        foreach (['pagecontent', 'ogimage'] as $filearea) {
+            $this->assertSame(1, $this->area_count($new, $filearea, $pageid), "{$filearea}: in the new context");
+            $this->assertSame(0, $this->area_count($old, $filearea, $pageid), "{$filearea}: none left in the old one");
+        }
+
+        $newcontext = \core\context::instance_by_id($new);
+        $this->assertNull($this->ask_ogimage_route($newcontext, [$pageid, 'og.png'], $this->ogimage_png()), 'Image served.');
+        $this->assertNull(
+            $this->ask_file_route($newcontext, 'pagecontent', [$pageid, 'body.png'], 'not really a png'),
+            'Body file served.'
+        );
+
+        // The page answers at its new address, its embedded file named in the new context.
+        $answer = \local_page\local\request::category($target, 0, 'handbook');
+        $this->assertSame($pageid, (int) $answer->page->id);
+        $this->assertTrue($answer->canview);
+        $this->assertStringContainsString(
+            "/pluginfile.php/{$new}/local_page/pagecontent/{$pageid}/body.png",
+            $answer->page->pagecontent
+        );
+
+        // Control: the old address no longer answers it.
+        $GLOBALS['PAGE'] = new \moodle_page();
+        $answer = \local_page\local\request::category($category, 0, 'handbook');
+        $this->assertSame(0, (int) $answer->page->id);
+        $this->assertFalse($answer->canview);
+
+        // The short code is kept, and resolves to the new address rather than the old one.
+        $this->assertSame(1, $this->code_count($pageid));
+        $resolved = (new \local_page\shortlink_handler())->process_shortlink('page', (string) $pageid);
+        $this->assertSame(\local_page\local\links::category_page($target, 'handbook')->out(false), $resolved->out(false));
+        $this->assertNotSame(\local_page\local\links::category_page($category, 'handbook')->out(false), $resolved->out(false));
+
+        // Controls: the child category moved under the new parent with its own context and kept its page there.
+        $this->assertSame($target, (int) $DB->get_field('course_categories', 'parent', ['id' => $child]));
+        $this->assertSame($childcontext, (int) $DB->get_field('local_page', 'contextid', ['id' => $childpage->id]));
+        $this->assertSame(1, $this->area_count($childcontext, 'ogimage', (int) $childpage->id));
+
+        // And the sibling's page is untouched, still serving its image.
+        $this->assertSame($siblingcontext, (int) $DB->get_field('local_page', 'contextid', ['id' => $siblingpage->id]));
+        $this->assertNull(
+            $this->ask_ogimage_route(
+                \core\context::instance_by_id($siblingcontext),
+                [(int) $siblingpage->id, 'og.png'],
+                $this->ogimage_png()
+            ),
+            'Sibling image served.'
+        );
+    }
+
+    /**
+     * A moved page whose slug a live page of the new parent holds gains its id; the resident keeps its address.
+     *
+     * The control is a second moved page whose slug is free, which keeps it.
+     *
+     * @return void
+     */
+    public function test_a_moved_page_whose_slug_the_new_parent_holds_gains_its_id(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $target = (int) $this->getDataGenerator()->create_category()->id;
+        $resident = $this->pages()->create_category_page($target, ['menuname' => 'contato']);
+        $arriving = $this->pages()->create_category_page($category, ['menuname' => 'contato']);
+        $free = $this->pages()->create_category_page($category, ['menuname' => 'sobre']);
+
+        \core_course_category::get($category)->delete_move($target);
+
+        $this->assertSame('contato', $DB->get_field('local_page', 'menuname', ['id' => $resident->id]));
+        $this->assertSame('contato-' . $arriving->id, $DB->get_field('local_page', 'menuname', ['id' => $arriving->id]));
+        $this->assertSame('sobre', $DB->get_field('local_page', 'menuname', ['id' => $free->id]));
+
+        // Each address of the new parent answers its own page.
+        $answer = \local_page\local\request::category($target, 0, 'contato');
+        $this->assertSame((int) $resident->id, (int) $answer->page->id);
+        $GLOBALS['PAGE'] = new \moodle_page();
+        $answer = \local_page\local\request::category($target, 0, 'contato-' . $arriving->id);
+        $this->assertSame((int) $arriving->id, (int) $answer->page->id);
+    }
+
+    /**
+     * Moving a category's content to the root is refused before core moves anything.
+     *
+     * core_course_category::delete_move() calls the callbacks first, so the refusal leaves the child
+     * category under its parent — core re-parents children only after the callbacks — and the page
+     * and its image where they were. The error is the one core's own web service gives for this move.
+     *
+     * The category is the one core's own category_hooks_test builds: real in everything but the list
+     * of plugin callbacks, which names this plugin's alone. Any other plugin declaring the same
+     * callback runs first otherwise — local_dimensions on the fleet stacks, which dies on the root's
+     * missing context with a database error of its own — and the refusal asserted would be theirs.
+     *
+     * @return void
+     */
+    public function test_moving_a_categorys_content_to_the_root_is_refused_before_anything_moves(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $child = (int) $this->getDataGenerator()->create_category(['parent' => $category])->id;
+        $context = (int) \core\context\coursecat::instance($category)->id;
+        $page = $this->furnished_category_page($category, 'handbook');
+
+        try {
+            $this->category_calling_only_this_plugin($category)->delete_move(0);
+            $this->fail('A move to the root must be refused.');
+        } catch (\moodle_exception $exception) {
+            $this->assertSame('movecatcontentstoroot', $exception->errorcode);
+        }
+
+        $this->assertTrue($DB->record_exists('course_categories', ['id' => $category]), 'The category is still there.');
+        $this->assertSame($category, (int) $DB->get_field('course_categories', 'parent', ['id' => $child]), 'Its child too.');
+        $row = $DB->get_record('local_page', ['id' => $page->id], '*', MUST_EXIST);
+        $this->assertSame($context, (int) $row->contextid);
+        $this->assertSame(0, (int) $row->deleted);
+        $this->assertSame('handbook', $row->menuname);
+        $this->assertSame(1, $this->area_count($context, 'ogimage', (int) $page->id));
+        $this->assertSame(1, $this->code_count((int) $page->id));
     }
 }

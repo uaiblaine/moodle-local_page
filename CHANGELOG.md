@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## [1.0.10+uai.9] - 2026-09-23
+
+What becomes of a category's pages when the category is deleted. Core deletes a category in two
+ways and, either way, ends by deleting the category's context and every file stored in it; until now
+the pages of that category were left behind, pointing at a context that no longer existed. No schema
+change and no upgrade step; the version bump is what makes core find the two new callbacks.
+
+### Added
+- **`local_page_pre_course_category_delete()`** (`lib.php`), which core calls from
+  `core_course_category::delete_full()` before deleting anything: every live page of the category is
+  soft-deleted the way the pages screen deletes one — `deleted = 1`, its friendly URL released as
+  `<slug>-deleted-<id>` — and its public short codes are removed. Files are left to core, which purges
+  them with the context. A subcategory's pages are handled by the same callback, which core's own
+  recursion calls for each subcategory in turn.
+- **`local_page_pre_course_category_delete_move()`** (`lib.php`), which core calls from
+  `core_course_category::delete_move()` before moving anything. For each page of the category, in
+  this order: both file areas (`pagecontent` and `ogimage`, under the page's id) move to the new
+  parent's context, as core relocates the content bank; then the row names the new context and
+  category; then its friendly URL is checked in the new category, and a slug a live page there already
+  holds gains the page's id (`contato` becomes `contato-42`) while the resident keeps its own — under
+  the lock the editor's save takes. Deleted rows move with their files and keep their names. Short
+  codes need no change: the handler answers a page's current address.
+- **A move to the root is refused** while the category holds a live page, with the error core's own
+  web service gives for that move (`movecatcontentstoroot`), before core has changed anything: a page
+  belongs to a category or to the site, and core cannot complete that move anyway.
+- **`\local_page\local\lifecycle`**, the class both callbacks delegate to, and
+  **`\local_page\local\slug::unique_in_context()`**, the slug a page may carry in a context it
+  arrives in.
+- The lang string `categorymovebusy`, in both packs, for the one failure left: another page being
+  saved while the category's pages are moved.
+- Tests: `tests/local/lifecycle_test.php`; four cases in `tests/lib_test.php` that delete and move
+  categories through `core_course_category` itself, with a page in a sibling category as the control
+  that must still serve its image afterwards; a case in `tests/local/slug_test.php`; and
+  `tests/privacy/provider_test.php`, which holds the null provider to the schema (no column naming a
+  user). Core's own privacy compliance test passes for the component. Ten more entries in
+  `mutations/gates.conf`.
+
+### Changed
+- Nothing else. `db/uninstall.php` already visits every context a page names and removes the
+  plugin's short codes (1.0.10+uai.3 and 1.0.10+uai.7).
+
 ## [1.0.10+uai.8] - 2026-09-22
 
 The Open Graph port. What a page puts in the document head when its link is shared — the preview a
