@@ -191,4 +191,61 @@ final class edit_form_test extends \advanced_testcase {
 
         $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => 'about']));
     }
+
+    /**
+     * Put a file in the current user's draft area, the way the file manager leaves an upload.
+     *
+     * @param string $content The file's bytes
+     * @param string $filename The file's name
+     * @return int The draft item id, which is what the form posts for the file manager
+     */
+    private function draft(string $content, string $filename): int {
+        global $USER;
+
+        $draftitemid = file_get_unused_draft_itemid();
+        get_file_storage()->create_file_from_string(
+            [
+                'contextid' => \context_user::instance($USER->id)->id,
+                'component' => 'user',
+                'filearea' => 'draft',
+                'itemid' => $draftitemid,
+                'filepath' => '/',
+                'filename' => $filename,
+            ],
+            $content
+        );
+
+        return $draftitemid;
+    }
+
+    /**
+     * An Open Graph image whose content is not the picture its name says is refused.
+     *
+     * @return void
+     */
+    public function test_an_og_image_that_is_not_the_picture_its_name_says_is_refused(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><script>alert(1)</script></svg>';
+        $refused = [
+            'an SVG named cover.png' => [$svg, 'cover.png'],
+            'a text file named cover.png' => ['not really a png', 'cover.png'],
+            'an SVG named cover.svg' => [$svg, 'cover.svg'],
+        ];
+        $expected = get_string('edit_ogimage_notimage', 'local_page');
+        foreach ($refused as $label => [$content, $filename]) {
+            $errors = $this->errors(['ogimage_filemanager' => $this->draft($content, $filename)]);
+            $this->assertSame($expected, $errors['ogimage_filemanager'] ?? null, $label);
+        }
+
+        // Control: a real PNG under the same name is accepted, and so is an empty field.
+        $image = imagecreatetruecolor(4, 3);
+        ob_start();
+        imagepng($image);
+        $png = (string) ob_get_clean();
+        $draftitemid = $this->draft($png, 'cover.png');
+        $this->assertArrayNotHasKey('ogimage_filemanager', $this->errors(['ogimage_filemanager' => $draftitemid]));
+        $this->assertArrayNotHasKey('ogimage_filemanager', $this->errors([]));
+    }
 }

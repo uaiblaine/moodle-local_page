@@ -71,6 +71,33 @@ function local_page_ogimage_filemanager_options(): array {
 }
 
 /**
+ * Whether a stored file is an Open Graph image this plugin advertises and serves.
+ *
+ * The file manager applies accepted_types to the file name only, and the file store types a file by its
+ * extension, so an SVG (markup, able to carry a script) or any other file saved as cover.png was stored,
+ * typed image/png and served to anybody. Both checks below are needed: the name must carry one of the
+ * accepted extensions, which keeps out a genuine SVG (a web image to core), and
+ * stored_file::is_valid_image() must pass, which requires the type read from the content to be the type
+ * the name gives.
+ *
+ * @param stored_file $file The file, in the ogimage area or in a user's draft area
+ * @return bool
+ */
+function local_page_ogimage_is_image(stored_file $file): bool {
+    if ($file->is_directory()) {
+        return false;
+    }
+
+    $types = new \core_form\filetypes_util();
+    $accepted = $types->normalize_file_types(local_page_ogimage_filemanager_options()['accepted_types']);
+    if (!$types->is_allowed_file_type($file->get_filename(), $accepted)) {
+        return false;
+    }
+
+    return $file->is_valid_image();
+}
+
+/**
  * Whether a timestamp falls inside a page's publish window.
  *
  * A bound of 0 (or a missing one) means no bound. local_page_user_can_view_page() and
@@ -428,6 +455,11 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
 
         // Retrieve the Open Graph image file from storage.
         $file = $fs->get_file($context->id, 'local_page', 'ogimage', $itemid, $filepath, $filename);
+
+        // Serve only a picture of the type its name says, however the file reached the area.
+        if ($file && !local_page_ogimage_is_image($file)) {
+            return false;
+        }
     }
 
     // Check if file was found and is not a directory.

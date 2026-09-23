@@ -308,11 +308,16 @@ class pages_edit_product_form extends moodleform {
      * The friendly URL is an address, so one that another page which is not deleted already holds is
      * refused; custompage::load_by_menuname() would otherwise answer with whichever of the two was saved last.
      *
+     * The Open Graph image is refused unless its content is the picture its name says
+     * (local_page_ogimage_is_image()): it is served to anybody, and the file manager checks only the name.
+     *
      * @param array $data Submitted values, "fieldname" => value
      * @param array $files Uploaded files
      * @return array Errors keyed by element name, empty when everything is acceptable
      */
     public function validation($data, $files) {
+        global $USER;
+
         $errors = parent::validation($data, $files);
 
         $accesslevel = trim((string) ($data['accesslevel'] ?? ''));
@@ -350,6 +355,25 @@ class pages_edit_product_form extends moodleform {
         $menuname = core_text::strtolower(trim((string) ($data['menuname'] ?? '')));
         if ($menuname !== '' && \local_page\local\slug::is_taken($menuname, (int) ($data['id'] ?? 0))) {
             $errors['menuname'] = get_string('menuname_taken', 'local_page');
+        }
+
+        // The file manager checks the image's name only; the file is served to anybody, so check its content.
+        $ogdraftitemid = (int) ($data['ogimage_filemanager'] ?? 0);
+        if ($ogdraftitemid > 0) {
+            $ogdraftfiles = get_file_storage()->get_area_files(
+                context_user::instance($USER->id)->id,
+                'user',
+                'draft',
+                $ogdraftitemid,
+                'id',
+                false
+            );
+            foreach ($ogdraftfiles as $ogdraftfile) {
+                if (!local_page_ogimage_is_image($ogdraftfile)) {
+                    $errors['ogimage_filemanager'] = get_string('edit_ogimage_notimage', 'local_page');
+                    break;
+                }
+            }
         }
 
         return $errors;

@@ -45,6 +45,7 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 #[CoversFunction('local_page_ogimage_is_servable')]
 #[CoversFunction('local_page_pluginfile')]
 #[CoversFunction('local_page_require_editable_page')]
+#[CoversFunction('local_page_ogimage_is_image')]
 final class lib_test extends \advanced_testcase {
     /**
      * The plugin's data generator.
@@ -242,6 +243,38 @@ final class lib_test extends \advanced_testcase {
 
         // An item id that names no page is refused as well.
         $this->assertFalse($this->ask_ogimage_route([$page->id + 1000, 'og.png'], $png));
+    }
+
+    /**
+     * pluginfile.php refuses an Open Graph image that is not the picture its name says.
+     *
+     * The file manager accepts a file by its name, and the file store types it by its name, so an SVG
+     * saved as og.png is stored as image/png. Every page here is published, so the refusals are the
+     * content check and not the publication gate; the real PNG is the control.
+     *
+     * @return void
+     */
+    public function test_ogimage_route_refuses_a_file_that_is_not_the_image_its_name_says(): void {
+        $this->resetAfterTest();
+        $this->setUser(null);
+
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><script>alert(1)</script></svg>';
+        $refused = [
+            'an SVG named og.png' => [$svg, 'og.png'],
+            'a text file named og.png' => ['not really a png', 'og.png'],
+            'an SVG named og.svg' => [$svg, 'og.svg'],
+        ];
+        foreach ($refused as $label => [$content, $filename]) {
+            $page = $this->pages()->create_page();
+            $this->store_ogimage($page->id, $filename, $content);
+            $this->assertFalse($this->ask_ogimage_route([$page->id, $filename], $content), $label);
+        }
+
+        // Control: the picture itself, on a page published the same way, is served.
+        $png = $this->png();
+        $page = $this->pages()->create_page();
+        $this->store_ogimage($page->id, 'og.png', $png);
+        $this->assertNull($this->ask_ogimage_route([$page->id, 'og.png'], $png));
     }
 
     /**

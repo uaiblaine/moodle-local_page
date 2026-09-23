@@ -105,7 +105,7 @@ if (!$canview) {
 
     if ($files) {
         $file = reset($files);
-        if (!$file->is_directory()) {
+        if (local_page_ogimage_is_image($file)) {
             $imageurl = moodle_url::make_pluginfile_url(
                 $file->get_contextid(),
                 $file->get_component(),

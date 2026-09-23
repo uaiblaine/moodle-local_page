@@ -46,6 +46,7 @@ $string['edit_head'] = "Content for &lt;head&gt;";
 $string['edit_htmlhead'] = "HTML &lt;head&gt;";
 $string['edit_navigation'] = "Navigation Settings";
 $string['edit_ogimage'] = "Open Graph Image File";
+$string['edit_ogimage_notimage'] = 'This file is not a JPEG, PNG or WebP picture of the type its name says. The Open Graph image is served to anybody, so only a real picture, saved under its own format\'s extension, is accepted.';
 $string['edit_pagedisplay'] = "Page Display Settings";
 $string['form'] = 'Form';
 $string['form_field_content'] = "Form Details";
