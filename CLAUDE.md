@@ -141,6 +141,10 @@ templates/                  Their Mustache counterparts; opengraph.mustache is p
 db/                         install.xml, upgrade.php, access.php, uninstall.php, hooks.php.
 .htaccess            SHIPS in the release zip — it is the friendly-URL feature,
                      not development scaffolding. Never export-ignore it.
+docs/nginx-runbook.md  The optional production NGINX steps (router fallback, root slugs,
+                     category alias, source-disclosure check), each with its check. The
+                     README's Friendly URLs section stays the canonical text; keep the two
+                     in step. docs/ is export-ignored.
 ```
 
 ## Architecture gotchas
@@ -327,6 +331,23 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php,
   category holds a live page — core cannot complete that move anyway: it dies resolving the root's
   category context after the callbacks. The callbacks are found through `get_plugins_with_function()`,
   so a change to them needs the version bump and `mdl upgrade` like any other `lib.php` callback.
+- **A move that fails part-way is not rolled back, and that is the accepted behaviour** (the one
+  minor finding of the stage-8 review, documented in `lifecycle::category_moved()`). The loop opens
+  no transaction and `course/management.php` calls `delete_move()` outside one, so a database failure
+  between pages leaves the pages already handled in the new parent with their files, the rest in the
+  old category with theirs, and the category itself in place (the exception stops `delete_move()`
+  before core changes anything). Running the move again completes it — a carried page no longer
+  names the old context, and an area whose files already moved is empty. One window is narrower, and
+  it is the one a claim of "re-running always completes it" misses: `move_area_files_to_new_context()`
+  copies every file and only then deletes the originals, so a failure inside that copy leaves copies
+  in the new context beside intact originals, and the next run stops on that page with a
+  `stored_file_creation_exception` (duplicate `pathnamehash`). Deleting that page's copies from the
+  new context — `get_file_storage()->delete_area_files(<new context id>, 'local_page', <area>,
+  <page id>)`, the originals are still in the old one — lets the next run complete. Both cases were
+  measured on m502 on 2026-09-23 by calling the class directly on probe categories. Core's web
+  service `core_course_delete_categories` wraps the whole deletion in one delegated transaction, so
+  none of this arises through it. Making the copy idempotent (skip a file the target already holds)
+  would close the window; it was left out because stage 9 changes no code.
 - **Other plugins declare the same category callbacks and run first.** `local_dimensions`
   (alphabetically before `local_page`) implements `pre_course_category_delete_move()` on the fleet
   stacks and dies on a root target with a database error of its own. `lib_test`'s root test therefore
@@ -374,3 +395,27 @@ db/                         install.xml, upgrade.php, access.php, uninstall.php,
 Follow the patterns in existing files, and remember which side of the fork line
 a file is on. The codebase is internally consistent — if a new file feels like
 it matches no existing shape, re-examine the approach.
+
+## State of the fork (2026-09-23)
+
+The category-pages series is complete, on stacked local branches that have never
+been pushed and have no pull request: `main` (`cf3df54`, upstream) ->
+`stage-0-fleet-onboarding` (`90e75b3`) -> `stage-1-security` (`909f8b4`) ->
+`stage-2-data-model` (`afc026f`) -> `stage-3-trust-publish` (`0360cf9`) ->
+`stage-4-authoring` (`961505b`, then `30f2fa8`, the fleet-rule mirror) ->
+`stage-5-viewer` (`2028da4`) -> `stage-6-addresses` (`12d88df`) ->
+`stage-7-opengraph` (`ba36f38`) -> `stage-8-lifecycle` (`10e3011`) ->
+`stage-9-adoption` (documentation only: the README's adoption guide, the CHANGELOG
+series summary, `docs/nginx-runbook.md`, the accepted-risk note above; no version
+bump, so the version stays `2026092208` / `v1.0.10+uai.9`). The intermediate
+branches `stage-2` and `stage-3` carry the broken upgrade order fixed in stage 4;
+never deploy one of them to a real site.
+
+What remains is the owner's call, not a session's: pushing the branches, and
+whether they reach `main` by pull request or by merge; the upstream pull request of
+the security fixes listed in the CHANGELOG series summary (decision D10); and
+production adoption, which follows the README's *Adopting category pages*
+checklist. There is never a release tag (D11). The theme follow-ups T1-T3 were
+deferred by decision D13 and are not part of the series. Outside this repo, the
+mount line `local_page|moodle-local_page|local/page|auto` in
+`~/dev/moodle-dev/plugins.conf` is still uncommitted there.

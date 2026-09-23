@@ -119,6 +119,22 @@ final class lifecycle {
      * has changed anything, leaves the whole site exactly as it was. A category holding no live page
      * is not this plugin's to refuse.
      *
+     * There is no rollback, by design: this is the accepted risk of the stage-8 review. The loop opens
+     * no transaction, and core's management screen (course/management.php) calls delete_move() outside
+     * one, so a database failure part-way through a category holding several pages leaves the pages
+     * already handled in the new parent with their files, and the rest in the old category with
+     * theirs. The exception stops delete_move() before core has changed anything, so the category
+     * stays too. Running the same move again completes it: each page is handled on its own, a page
+     * already carried no longer names the old context and is not selected again, and a page whose
+     * files moved before its row did finds its old area empty and moves nothing. One window is
+     * narrower: core's move_area_files_to_new_context() copies every file of an area and only then
+     * deletes the originals, so a failure inside that copy leaves some copies in the new context beside
+     * the intact originals, and the next run stops on that page with a stored_file_creation_exception
+     * until those copies are deleted from the new context. Both cases were measured on m502 on
+     * 2026-09-23. Through core's web service core_course_delete_categories none of this arises: it
+     * wraps the whole deletion in one delegated transaction, which rolls every row back, file records
+     * included.
+     *
      * @param int $categoryid The category being deleted
      * @param int $newparentid The category its content moves to; 0 is the root
      * @return void

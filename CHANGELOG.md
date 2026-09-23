@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## The category-pages series (1.0.10+uai.1 to uai.9) — 2026-09-23
+
+A summary for administrators of the nine releases below; it is not a release of its own, and the
+version stays at 2026092208 (1.0.10+uai.9). The README's *Adopting category pages* section is the
+guide to taking it into production, and `docs/nginx-runbook.md` orders the optional web server work.
+
+**What the series adds.** A custom page may now belong to a course category as well as to the site.
+Holders of `local/page:managecategorypages` in a category write that category's pages from its own
+administration menu; putting one in front of visitors who are not logged in takes a second
+capability, `local/page:publishcategorypages`. Both are assigned per category and held by the manager
+archetype by default. A category page's HTML is cleaned by Moodle unless its author was trusted with
+unclean markup under core's trusted-content rules, and its `<head>` field does not exist. Visitors
+read a category's pages only while `local_unlistedcourses` says the category is public; without that
+plugin nobody does, and the refusal is the same whether a category or a page exists or not. Each
+category page has a routed address, `/local_page/category/<id>/<slug>`, and a public short address,
+`/p/<code>`, minted when it is saved. Its Open Graph tags are rebuilt: one title, a description, the
+locale, a canonical link, a content-checked image of up to 600 KB at an address that changes with the
+picture, and `noindex` unless the site is open to search engines. When core deletes a category its
+pages are deleted with it, or move with their files to wherever its content moves.
+
+**What changes for site-wide pages.** Their addresses, rules and body are upstream's, apart from the
+security fixes listed below; friendly URLs are unique among live pages, which the upgrade enforces
+once by renaming duplicates. Their head changes with every other page's: the rebuilt Open Graph tags
+and the canonical link apply to them too, and the plugin no longer writes to
+`$CFG->additionalhtmlhead`. The plugin requires Moodle 5.2 and declares no other branch.
+
+**Fixes worth offering upstream as a pull request** (decision D10; a list, not a date):
+
+- The Open Graph image area was served to anybody by item id, a draft's or a deleted page's image
+  included; it is now served only for a live page inside its publish window (1.0.10+uai.2).
+- The save path trusted the posted page id; it now re-reads the row, refuses a deleted one and
+  checks the capability against it (1.0.10+uai.2).
+- An access level made only of negated capabilities grants the page to every visitor while reading
+  like a restriction; the form now refuses it, and any capability the site does not define
+  (1.0.10+uai.2).
+- Friendly URLs had no uniqueness at all, so a duplicate silently shadowed an older page; they are now
+  unique among live pages, normalised once on upgrade and released on delete (1.0.10+uai.2, per
+  context from 1.0.10+uai.3).
+- An SVG, or any file, saved under a raster image's name was stored as that image and served
+  anonymously; an Open Graph image must now be the picture its name says (1.0.10+uai.8).
+- Upstream wrote the meta title as an invalid `<meta name="og:title">` beside the real `og:title`,
+  so a shared link never showed the title written for sharing; there is now one `og:title`
+  (1.0.10+uai.8).
+- The upgrade-order repair (1.0.10+uai.5) belongs to the pull request only together with the two
+  steps it orders, the slug normalisation and the context columns; upstream has neither on its own.
+- The README's NGINX advice to add a dot to the slug class, which can serve PHP source, was removed
+  in 1.0.10+uai.2. The same release also replaced upstream's `&$query_string` with `$is_args$args`,
+  on the belief that the former was invalid; it was not, and the replacement appends a second `?`
+  whenever the visitor's address carries a query. Measured on NGINX on 2026-09-23, the README is
+  back to upstream's spelling, with the reason beside it, so only the removal of the dot belongs in
+  the pull request.
+
+**No release.** This fork is never tagged and never publishes to moodle.org (decision D11): releases
+there are the upstream author's, and the fork follows them by `git merge upstream/main`.
+
 ## [1.0.10+uai.9] - 2026-09-23
 
 What becomes of a category's pages when the category is deleted. Core deletes a category in two

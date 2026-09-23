@@ -133,6 +133,287 @@ search engines*): a category page exists so that a shared link unfurls, not so t
 lists it, and that is the site's decision, not each author's. A site-wide page without a directive
 carries none, as before.
 
+## Adopting category pages
+
+This section is for the administrator taking category pages into production. It was written for the
+FUNDASEG site (Moodle 5.2, `forcelogin` on, NGINX, `local_unlistedcourses` installed), where the
+plugin is not installed yet, so there is nothing to migrate: step 1 of the checklist confirms that
+before anything else is done. Every expected value below was measured on a development copy of
+Moodle 5.2 on 2026-09-23, with one exception said where it appears: that copy shows developer
+debugging, so a refused file answers `500` there where a production site answers `404`.
+
+Run every `php` command from the Moodle directory that holds `config.php`, as the web server's user
+(`sudo -u www-data php ...` on Debian and Ubuntu).
+
+### Prerequisites
+
+- **Moodle 5.2.** The plugin requires it and declares no other branch.
+- **This fork, from its git repository.** The plugin page on moodle.org publishes upstream's
+  releases, which have none of this; see *What this fork does not ship* below.
+- **The routing engine, `$CFG->routerconfigured = true`**, with the web server fallback that hands
+  unknown paths to `r.php` ([NGINX runbook](docs/nginx-runbook.md), step 1). It is what gives a
+  category page its routed address and its `/p/<code>` short address. Without it category pages
+  still work at the script's address, and no code is minted.
+- **`local_unlistedcourses`, for visitors.** Optional, and the plugin fails closed without it: no
+  category page reaches a visitor who is not logged in, whatever its settings. With it, a category's
+  pages reach visitors only while that plugin says the category is **public** (public state, visible
+  category, visible categories above it).
+- **`$CFG->enabletrusttext`** (*Site administration > Security > Site security settings > Enable
+  trusted content*) decides what happens to raw HTML in a category page. Off, the default: every
+  category page is cleaned by Moodle, whoever wrote it. On: a page saved by an author holding
+  `moodle/site:trustcontent` in that category keeps its markup, scripts and iframes included. Site-wide
+  pages are not affected either way, and `$CFG->forceclean` overrides both.
+- **`$CFG->opentowebcrawlers`** (*Open to search engines*, same settings page) decides the robots
+  directive of a category page whose author left *Meta Robots* empty. Off: `noindex`. On: none.
+
+### Roles: who writes and who publishes
+
+| Capability | Context | What it grants | Default holders |
+|---|---|---|---|
+| `local/page:addpages` | system | The site-wide pages and their screen, as upstream. Unchanged. | manager, course creator |
+| `local/page:managecategorypages` | course category | List, create, edit and delete the pages of that category, reached from the category's own menu. | manager |
+| `local/page:publishcategorypages` | course category | Save a category page that visitors who are not logged in can read. Without it a page is stored for logged-in users only, whatever the form says. | manager |
+
+**Assign them at the category, never at system.** A capability applies to the context where its role
+is assigned and to everything below it: a role assigned at system level grants these capabilities in
+every category of the site, and one assigned at a parent category grants them in all its
+subcategories. Neither capability copies itself from another one on upgrade, so nobody holds them
+until you decide who does, apart from the Manager role.
+
+**Prefer a dedicated role to Manager.** Manager holds both capabilities by default, and a Manager
+assigned at a category can already write and publish its pages. It also holds everything else a
+category manager can do, `moodle/site:trustcontent` included, so on a site with trusted content
+switched on, a Manager's HTML is never cleaned. A role that carries exactly the one right keeps the two
+decisions separate:
+
+1. *Site administration > Users > Permissions > Define roles > Add a new role*, archetype *No role*,
+   context type **Category** only. Name it, say, *Category page author*, and allow
+   `local/page:managecategorypages`.
+2. Create a second role the same way, *Category page publisher*, allowing
+   `local/page:publishcategorypages`, for the people who may put a page in front of the open web.
+   Holding both is what an author needs to publish their own pages.
+3. In each category that should have pages, open the category, then its administration menu
+   (*Category* in the secondary navigation) > **Permissions**, and use the selector at the top of that
+   page to reach **Assign roles**. Assign the roles there.
+4. On the same page, **Permissions** lists both capabilities under the *Custom Pages* heading, and
+   **Check permissions** confirms what a given person holds in that category.
+
+Keep `moodle/site:trustcontent` away from category authors unless their raw HTML is meant to reach
+visitors unfiltered. `local/page:addpages` stays with administrators and course creators: it governs
+the site-wide pages, which keep upstream's trusted rendering and their `<head>` field.
+
+### Upgrade notes
+
+- **Rehearse on a labelled copy first.** Restore a backup of the database and `moodledata` to a
+  staging site, run `php admin/cli/upgrade.php --non-interactive` there, and only then on production.
+- **The upgrade path was repaired in 1.0.10+uai.5.** An earlier build of this series numbered the
+  step that normalises friendly URLs below the step that adds the column it reads, so an upgrade from
+  any release before 2026092201 died half applied. A fresh install never walks those steps, which is
+  why no test caught it. Deploy the tip of the series, never one of its intermediate branches.
+- **Upstream's pages keep working.** A site-wide page keeps its addresses, its rules and its body,
+  apart from the security fixes: an Open Graph image is served only for a live page inside its
+  publish window, a saved access level must name real capabilities and not only negations, and
+  friendly URLs are unique. What does change is its head: the Open Graph tags are rebuilt for every
+  page (see *Sharing a page*), and the plugin no longer appends them to the site's
+  `$CFG->additionalhtmlhead`.
+- **That uniqueness rewrites stored friendly URLs once**, in step 2026092202: every slug is trimmed,
+  lower-cased and cut to the column width, an empty one becomes `page-<id>`, a duplicate keeps its
+  address on the lowest id and gains `-<id>` elsewhere, and a deleted page's becomes
+  `<slug>-deleted-<id>`. On a site that already runs upstream's plugin, list the live slugs on the copy
+  before and after the upgrade; every line that changed is a published address that changed.
+  ```sh
+  php -r 'define("CLI_SCRIPT", true); require("config.php");
+  foreach ($DB->get_records("local_page", ["deleted" => 0], "id", "id, menuname") as $page) {
+      echo $page->id, " ", $page->menuname, "\n";
+  }'
+  ```
+- **Releases 1.0.10+uai.5 to uai.9 add no table and no column, and still need the upgrade.** Their
+  version bump is what makes Moodle register what they add: the category menu node and the two
+  category deletion callbacks in `lib.php`, and the Open Graph hook in `db/hooks.php`. Until the
+  upgrade has run none of them is registered; step 2 of the checklist is how to tell.
+
+### Verification checklist
+
+Nine steps, in this order. Each step gives the expected answer and what a wrong one means.
+
+**1. Is the plugin installed, and what does it hold?**
+
+```sh
+php -r 'define("CLI_SCRIPT", true); require("config.php");
+$v = get_config("local_page", "version");
+if (!$v) { exit("local_page is not installed\n"); }
+echo "local_page version ", $v, "\n";
+echo "pages: ", $DB->count_records("local_page"), " (not deleted: ", $DB->count_records("local_page", ["deleted" => 0]), ")\n";
+echo "files: ", $DB->count_records_select("files", "component = ? AND filename <> ?", ["local_page", "."]), "\n";'
+```
+
+Expected at FUNDASEG today: `local_page is not installed`. A version of `2026050805` or lower means
+upstream's plugin is already there, with the pages and files counted: follow the upgrade notes above,
+the slug listing included, before going further.
+
+**2. Upgrade, and confirm nothing is pending.**
+
+```sh
+php admin/cli/upgrade.php --non-interactive
+php admin/cli/upgrade.php --is-pending; echo "exit $?"
+```
+
+Expected: `No upgrade needed ...` and `exit 0`, and *Site administration > Plugins > Plugins overview*
+lists `local_page` at version `2026092208`. Exit code `2` means the upgrade has not run, and nothing the
+series registers (hook, menu node, callbacks) is active yet.
+
+**3 and 4. Who holds the category capabilities, and who holds trusted content.** Assign the roles as
+described above, then print the holders for a category you assigned (`12` here) and for one where you
+assigned nobody (`13`):
+
+```sh
+php -r 'define("CLI_SCRIPT", true); require("config.php");
+$context = context_coursecat::instance((int) $argv[1]);
+foreach (["local/page:managecategorypages", "local/page:publishcategorypages", "moodle/site:trustcontent"] as $cap) {
+    $users = get_users_by_capability($context, $cap, "u.id, u.username");
+    echo $cap, ": ", implode(", ", array_column($users, "username")) ?: "(nobody)", "\n";
+}' 12
+```
+
+Run it a second time with `13` in place of the final `12`. Expected: the category nobody was
+assigned in lists only the people who hold the capabilities
+site-wide (system-level managers), and the assigned category lists those same people plus exactly the
+ones you assigned. Site administrators hold everything and are not listed. An author who appears in the
+unassigned category was given the role at system level or in a parent category. On the
+`moodle/site:trustcontent` line, anyone listed beyond your system-level managers keeps raw HTML when
+trusted content is on — usually a Manager assigned at the category. Then open the category's
+**Permissions** page: both capabilities must be listed under *Custom Pages*.
+
+**5. Is `local_unlistedcourses` installed, and are the target categories public?**
+
+```sh
+php -r 'define("CLI_SCRIPT", true); require("config.php");
+if (!class_exists(\local_unlistedcourses\category_discoverability::class)) {
+    exit("local_unlistedcourses is not installed: no category page reaches a visitor\n");
+}
+foreach (array_slice($argv, 1) as $id) {
+    echo $id, ": ", \local_unlistedcourses\category_discoverability::is_public((int) $id) ? "public" : "NOT public", "\n";
+}' 12 13
+```
+
+Expected: `public` for every category whose pages visitors must read. `NOT public` means those
+visitors are sent to the login page, which is the correct answer for a category that is meant to stay
+private. The category's *Discoverability* entry, in the same menu as *Custom pages*, changes it.
+
+**6. The two site settings.**
+
+```sh
+php -r 'define("CLI_SCRIPT", true); require("config.php");
+echo "routerconfigured:  ", empty($CFG->routerconfigured) ? "no" : "yes", "\n";
+echo "opentowebcrawlers: ", empty($CFG->opentowebcrawlers) ? "no" : "yes", "\n";
+echo "enabletrusttext:   ", empty($CFG->enabletrusttext) ? "no" : "yes", "\n";
+echo "forcelogin:        ", empty($CFG->forcelogin) ? "no" : "yes", "\n";'
+```
+
+Expected: `routerconfigured: yes`; `opentowebcrawlers` and `enabletrusttext` at the values you chose
+(both `no` keeps category pages out of search engines and cleans all their HTML). *Site administration
+> Reports > System status* runs Moodle's own *Router configuration* check, which requests the site
+from the server itself.
+
+**7. The addresses, from outside the VPN.** Create a test page in a public category, with an Open
+Graph image and status *Live*, and a second one left as *Draft* with an image too. Print their
+addresses (the category id is the argument):
+
+```sh
+php -r 'define("CLI_SCRIPT", true); require("config.php");
+foreach ($DB->get_records("local_page", ["categoryid" => (int) $argv[1], "deleted" => 0], "id") as $page) {
+    $image = \local_page\local\ogimage::stored(\local_page\local\scope::context($page), (int) $page->id);
+    echo $page->status, " ", $page->menuname, "\n",
+        "  page:  ", \local_page\local\links::page($page)->out(false), "\n",
+        "  short: ", \local_page\local\links::existing_share((int) $page->id)?->out(false) ?? "(none)", "\n",
+        "  image: ", $image ? \local_page\local\ogimage::url($image)->out(false) : "(none)", "\n";
+}' 12
+```
+
+Then, from a machine outside the VPN and without any session, fill in the variables and run:
+
+```sh
+SITE=https://moodle.example.org    # $CFG->wwwroot, no trailing slash
+CAT=12                             # the public category holding the test pages
+SLUG=adoption-check                # the live test page's friendly URL
+PRIV=13                            # a category that is not public
+CODE=AbC12                         # the live test page's short code, after /p/
+DRAFTIMG='https://...'             # the draft test page's image address, as printed above
+
+curl -s -o /dev/null -w '%{http_code}\n' "$SITE/local_page/category/$CAT/$SLUG"
+for url in "$SITE/local_page/category/$PRIV/$SLUG" \
+           "$SITE/local_page/category/999999999/$SLUG" \
+           "$SITE/local_page/category/$CAT/no-such-page"; do
+    curl -s -o /dev/null -D - "$url" | grep -iv '^date:\|^set-cookie:' | cksum
+done
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$SITE/local_page/category/$PRIV/$SLUG"
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$SITE/local/page/index.php?category=$CAT&page=$SLUG"
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$SITE/p/$CODE"
+curl -s -o /dev/null -w '%{http_code}\n' "$DRAFTIMG"
+for path in index.php local/page/index.php r.php; do
+    printf '%s: ' "$path"; curl -s "$SITE/$path" | head -c 5; echo
+done
+```
+
+| Line | Expected | A wrong answer means |
+|---|---|---|
+| The live page | `200` | A `302` to the login page: the category is not public (step 5), or the page is a draft, outside its window, or stored for logged-in users because its author could not publish. A web server `404`: the router fallback is missing ([runbook](docs/nginx-runbook.md), step 1). |
+| The three refusals (private category, missing category, missing slug) | three identical lines | The site answers them differently, so an anonymous client can tell which categories and pages exist. |
+| The private category, again | `302 $SITE/login/index.php` | A `200` means that category is public. A visitor's refusal on the routed address is always a `302`. |
+| The script's address | `303 $SITE/local_page/category/$CAT/$SLUG` | A `200`: `$CFG->routerconfigured` is off and the script serves the page itself. The script's redirects are always `303`. |
+| `/p/$CODE` | `302 $SITE/local_page/category/$CAT/$SLUG` | A `404`: the code is wrong, or its page was deleted, which deletes its codes. |
+| The draft's image | `404` | A `200` means a draft's picture is public, so this fork's image gate is not the code running. A development site with developer debugging answers `500` (its error page), which is also a refusal; without it, Moodle's error page sends `404` (`core_renderer::fatal_error()`). |
+| `index.php`, `local/page/index.php`, `r.php` | anything but `<?php` (measured: `<!DOC` or `<!doc`) | `<?php` is the source of Moodle served as text: a regex location captures `.php` before the PHP handler does. Fix the location order at once ([runbook](docs/nginx-runbook.md), steps 2 and 3). |
+
+**8. Paste a short address into WhatsApp and Telegram.** This one is by hand. Paste
+`$SITE/p/$CODE` into a chat in each app: the preview card must show the page's *Meta Title* (its name
+when that is empty), its *Meta Description* and its image. Then replace the image in the editor, save,
+and paste the address again: the image address carries the file's content hash, so the new picture
+must appear. If an app still shows the old card, it has cached the page itself; Telegram refreshes a
+link's preview through its `@WebpageBot`.
+
+**9. Every capability has its name.** A capability without its language string shows as
+`[[name:capability]]` on a production site and, on a site with developer debugging, stops the
+permissions table part-way down the page. Print where to look for a course (course id `2` here) and
+how many rows to expect:
+
+```sh
+php -r 'define("CLI_SCRIPT", true); require("config.php");
+$context = context_course::instance((int) $argv[1]);
+echo "open   ", (new moodle_url("/admin/roles/permissions.php", ["contextid" => $context->id]))->out(false), "\n",
+    "expect ", count($context->get_capabilities()), " capability rows\n";' 2
+```
+
+Open that address as an administrator and count the rows in the browser's developer console with
+`document.querySelectorAll('#permissions tr[data-name]').length`; the number must equal the one
+printed. Then run the sweep, which names every installed component whose capability lacks its string;
+empty output is clean:
+
+```sh
+php -r 'define("CLI_SCRIPT", true); require("config.php");
+foreach ($DB->get_records("capabilities", null, "component, name") as $c) {
+    list($t, $n, $cn) = preg_split("|[/:]|", $c->name);
+    $comp = $t === "moodle" ? "core_role" : ($t === "quizreport" ? "quiz_$n" : "{$t}_{$n}");
+    if ($comp !== "core_role" && !get_string_manager()->string_exists("$n:$cn", $comp)
+            && file_exists((string) core_component::get_component_directory($comp))) {
+        echo "$comp  $n:$cn  ($c->name)\n";
+    }
+}'
+```
+
+### What this fork does not ship
+
+- **No web server alias.** The routed address and `/p/<code>` need nothing beyond the router's own
+  fallback. A shorter vanity prefix is optional and described below and, as ordered steps, in the
+  [NGINX runbook](docs/nginx-runbook.md).
+- **No release tag and no moodle.org package.** This fork is never tagged and never publishes to
+  moodle.org; that is the upstream author's channel, and the release workflow that would publish on a
+  tag was removed. Install from the fork's git repository. Upstream releases arrive by
+  `git merge upstream/main` into the fork's `main`, never by rebase.
+- **No `$CFG->urlrewriteclass`.** The plugin never sets it: Moodle has one slot for it, with no
+  chaining, and the site may need it for something else. The optional rewriter of site-wide links
+  described under *Friendly URLs* is upstream's and stays optional.
+
 ## Friendly URLs (`menuname`)
 
 Pages can use a **Friendly URL** slug (`menuname`) so viewers can open  
@@ -172,11 +453,15 @@ If Moodle is under `/moodle/`, use `RewriteRule ^([a-zA-Z0-9_-]+)$ /moodle/local
 
 ```nginx
 location ~ ^/([a-zA-Z0-9_-]+)$ {
-    try_files $uri $uri/ /local/page/index.php?menuname=$1$is_args$args;
+    try_files $uri $uri/ /local/page/index.php?menuname=$1&$query_string;
 }
 ```
 
-Again, prefix with your Moodle base path if not at domain root.
+Again, prefix with your Moodle base path if not at domain root. The target already carries a query of
+its own, so the visitor's query string is appended with `&` (`$query_string` is NGINX's other name for
+`$args`). `$is_args$args` is the spelling for a target without a query, such as the router's
+`/r.php$is_args$args`; here it would add a second `?`, and a shared link carrying `?fbclid=...` would
+reach the viewer as the slug `about-usfbclid...`, a page that does not exist.
 
 **Conflicts**: A catch-all slug rule can shadow other single-segment routes. Restrict slugs in the rule, reserve paths, or place this rule after more specific locations.
 
@@ -209,6 +494,9 @@ has no route for. The Apache rule belongs where the slug rule above goes, in the
 the router is configured, the script then answers the alias with a `303` to the routed address, so the
 alias works as a short redirect and the address bar settles on the canonical address; where it is not, the
 script serves the page at the alias. Adjust the prefix if Moodle lives in a subdirectory.
+
+The [NGINX runbook](docs/nginx-runbook.md) puts this alias and the rest of the web server guidance
+above into ordered steps for a production site, each with the check that proves it.
 
 ### Optional: shorten links Moodle prints (`urlrewriteclass`)
 
