@@ -46,6 +46,7 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 #[CoversFunction('local_page_pluginfile')]
 #[CoversFunction('local_page_require_editable_page')]
 #[CoversFunction('local_page_ogimage_is_image')]
+#[CoversFunction('local_page_og_title')]
 final class lib_test extends \advanced_testcase {
     /**
      * The plugin's data generator.
@@ -344,5 +345,23 @@ final class lib_test extends \advanced_testcase {
         $this->setUser($this->user_holding('local/page:addpages'));
         $this->assertNotNull(local_page_require_editable_page($page->id));
         $this->assertNull(local_page_require_editable_page(0));
+    }
+
+    /**
+     * The og:title is the meta title when there is one, the page name otherwise.
+     *
+     * @return void
+     */
+    public function test_og_title_prefers_the_meta_title(): void {
+        $this->resetAfterTest();
+
+        $titled = $this->pages()->create_page(['pagename' => 'About us', 'metatitle' => 'About our school']);
+        $this->assertSame('About our school', local_page_og_title($titled));
+
+        // Control: without a meta title, or with a blank one, the page is shared under its name.
+        $untitled = $this->pages()->create_page(['pagename' => 'About us', 'metatitle' => '']);
+        $this->assertSame('About us', local_page_og_title($untitled));
+        $blank = $this->pages()->create_page(['pagename' => 'About us', 'metatitle' => '   ']);
+        $this->assertSame('About us', local_page_og_title($blank));
     }
 }

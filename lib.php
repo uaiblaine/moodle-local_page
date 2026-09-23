@@ -98,6 +98,21 @@ function local_page_ogimage_is_image(stored_file $file): bool {
 }
 
 /**
+ * The og:title of a page: its meta title when it has one, its name otherwise.
+ *
+ * The meta title is the title written for sharing, so it is what a link preview should show; a page
+ * without one is shared under its name.
+ *
+ * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
+ * @return string
+ */
+function local_page_og_title(object $page): string {
+    $metatitle = trim((string) ($page->metatitle ?? ''));
+
+    return $metatitle !== '' ? $metatitle : (string) ($page->pagename ?? '');
+}
+
+/**
  * Whether a timestamp falls inside a page's publish window.
  *
  * A bound of 0 (or a missing one) means no bound. local_page_user_can_view_page() and

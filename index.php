@@ -87,7 +87,6 @@ if (!$canview) {
         'description' => $custompage->metadescription,
         'keywords' => $custompage->metakeywords,
         'author' => $custompage->metaauthor,
-        'og:title' => $custompage->metatitle,
         'robots' => $custompage->metarobots,
     ];
 
@@ -127,7 +126,7 @@ if (!$canview) {
 
     $headseo .= html_writer::empty_tag('meta', ['property' => 'og:site_name', 'content' => $SITE->fullname]) . "\n";
     $headseo .= html_writer::empty_tag('meta', ['property' => 'og:type', 'content' => 'website']) . "\n";
-    $headseo .= html_writer::empty_tag('meta', ['property' => 'og:title', 'content' => $custompage->pagename]) . "\n";
+    $headseo .= html_writer::empty_tag('meta', ['property' => 'og:title', 'content' => local_page_og_title($custompage)]) . "\n";
     $headseo .= html_writer::empty_tag('meta', ['property' => 'og:url', 'content' => $canonicalurl->out(false)]) . "\n";
 
     $additionalhead = get_config('local_page', 'additionalhead') ? (string) $custompage->meta : '';
