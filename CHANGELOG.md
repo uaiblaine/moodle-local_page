@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [1.0.11] - Unreleased
+
+### Security
+- The Open Graph image (`ogimage` file area) is served only while its page is published: not deleted, status **live** and inside its publish window. It was served to anybody by page id, whatever the state of the page. The `og:image` tag is emitted only when the image will be served.
+- An Open Graph image must be the picture its name says. The file manager checks the file name only, so an SVG (able to carry script) or any other file renamed `cover.png` was stored as `image/png` and served to anybody. Such a file is now refused by the edit form, not served by `pluginfile.php` and not advertised.
+- The save path no longer trusts the posted page id: it re-reads the page, refuses a missing or deleted one and writes to the id it read back. `edit.php` no longer opens a deleted page.
+- **Required capability** is validated on save: a capability the site does not define is refused, and so is a list made only of negated capabilities, which grants the page to every visitor while reading like a restriction.
+
+### Fixed
+- Friendly URLs (`menuname`) are unique among pages that are not deleted: the edit form refuses one already in use, and the save checks again under a lock. Deleting a page releases its friendly URL (it becomes `<slug>-deleted-<id>`), and a page saved without one is named `page-<id>`. The upgrade to 2026050806 brings existing pages into line once: empty friendly URLs are named, duplicates after the oldest page gain `-<id>`, and deleted pages release theirs.
+- One `og:title`: the meta title when there is one, the page name otherwise. The meta title was written as `<meta name="og:title">`, which Open Graph readers ignore, beside the page name as the real `og:title`.
+- README: the advice to add `.` to the slug pattern is removed (`PARAM_ALPHANUMEXT` strips dots, and on NGINX such a pattern can serve PHP source), and a paragraph explains the order NGINX locations must be declared in.
+
+### Added
+- PHPUnit tests and a data generator under `tests/` for the changes above.
+
 ## [1.0.10] - 2026-05-08
 
 ### Security
