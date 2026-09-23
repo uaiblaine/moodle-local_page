@@ -206,7 +206,7 @@ class local_page_renderer extends plugin_renderer_base {
      * @param bool $page
      */
     public function save_page($page = false) {
-        global $CFG;
+        global $CFG, $DB;
         $mform = new pages_edit_product_form($page);
         if ($mform->is_cancelled()) {
             redirect(new moodle_url($CFG->wwwroot . '/local/page/pages.php'));
@@ -256,7 +256,28 @@ class local_page_renderer extends plugin_renderer_base {
             $recordpage->contenthtml = $data->contenthtml;
 
             $recordpage->pagecontent = $savedpagecontent;
-            $result = $page->update($recordpage);
+
+            // The form checked the friendly URL is free, but two saves can pass that check at once: serialise
+            // the write and check again under the lock. A lock not granted in time means another save is running.
+            $lock = \core\lock\lock_config::get_lock_factory('local_page')->get_lock('menuname', 10);
+            if (!$lock) {
+                throw new moodle_exception('menuname_taken', 'local_page');
+            }
+            try {
+                if (\local_page\local\slug::is_taken($recordpage->menuname, (int) $recordpage->id)) {
+                    throw new moodle_exception('menuname_taken', 'local_page');
+                }
+
+                $result = $page->update($recordpage);
+
+                // A page saved without a friendly URL is given one, so every page has an address.
+                if ($result && $result > 0 && $recordpage->menuname === '') {
+                    $DB->set_field('local_page', 'menuname', 'page-' . (int) $result, ['id' => (int) $result]);
+                }
+            } finally {
+                $lock->release();
+            }
+
             if ($result && $result > 0) {
                 $options = local_page_ogimage_filemanager_options();
                 if (isset($data->ogimage_filemanager)) {

@@ -187,4 +187,24 @@ final class save_page_test extends \advanced_testcase {
         $this->assertSame('Old name', $DB->get_field('local_page', 'pagename', ['id' => $deleted->id]));
         $this->assertFalse($DB->record_exists('local_page', ['id' => $missingid]));
     }
+
+    /**
+     * A page saved without a friendly URL is named after its id.
+     *
+     * @return void
+     */
+    public function test_a_page_saved_without_a_slug_is_named_after_its_id(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $this->save_to_the_end(0, ['pagename' => 'Unnamed', 'menuname' => '']);
+        $unnamed = $DB->get_record('local_page', ['pagename' => 'Unnamed'], '*', MUST_EXIST);
+        $this->assertSame('page-' . $unnamed->id, $unnamed->menuname);
+
+        // Control: a page saved with a slug keeps it.
+        $this->save_to_the_end(0, ['pagename' => 'Named', 'menuname' => 'handbook']);
+        $this->assertSame('handbook', $DB->get_field('local_page', 'menuname', ['pagename' => 'Named']));
+    }
 }

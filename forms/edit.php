@@ -305,6 +305,9 @@ class pages_edit_product_form extends moodleform {
      * only of negated entries is refused too: each one grants the page to every visitor who does not hold
      * the capability, anonymous ones included, so on its own it restricts nothing.
      *
+     * The friendly URL is an address, so one that another page which is not deleted already holds is
+     * refused; custompage::load_by_menuname() would otherwise answer with whichever of the two was saved last.
+     *
      * @param array $data Submitted values, "fieldname" => value
      * @param array $files Uploaded files
      * @return array Errors keyed by element name, empty when everything is acceptable
@@ -341,6 +344,12 @@ class pages_edit_product_form extends moodleform {
             } else if ($entries > 0 && $positives === 0) {
                 $errors['accesslevel'] = get_string('accesslevel_negationonly', 'local_page');
             }
+        }
+
+        // Compared trimmed and lower-cased, the form the save path stores.
+        $menuname = core_text::strtolower(trim((string) ($data['menuname'] ?? '')));
+        if ($menuname !== '' && \local_page\local\slug::is_taken($menuname, (int) ($data['id'] ?? 0))) {
+            $errors['menuname'] = get_string('menuname_taken', 'local_page');
         }
 
         return $errors;

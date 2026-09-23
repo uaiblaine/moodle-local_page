@@ -44,6 +44,15 @@ require_once($CFG->dirroot . '/local/page/forms/edit.php');
 #[CoversClass(\pages_edit_product_form::class)]
 final class edit_form_test extends \advanced_testcase {
     /**
+     * The plugin's data generator.
+     *
+     * @return \local_page_generator
+     */
+    private function pages(): \local_page_generator {
+        return $this->getDataGenerator()->get_plugin_generator('local_page');
+    }
+
+    /**
      * Run validation() over one set of submitted values, on a form built the way edit.php builds one.
      *
      * @param array $data Submitted values; the fields validation() reads default to empty
@@ -118,5 +127,68 @@ final class edit_form_test extends \advanced_testcase {
         foreach ($valid as $label => $accesslevel) {
             $this->assertArrayNotHasKey('accesslevel', $this->errors(['accesslevel' => $accesslevel]), $label);
         }
+    }
+
+    /**
+     * A friendly URL another page that is not deleted already holds is refused.
+     *
+     * @return void
+     */
+    public function test_a_slug_another_page_holds_is_refused(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $this->pages()->create_page(['menuname' => 'about']);
+
+        $expected = get_string('menuname_taken', 'local_page');
+        $this->assertSame($expected, $this->errors(['menuname' => 'about'])['menuname'] ?? null);
+        $this->assertSame($expected, $this->errors(['menuname' => 'About'])['menuname'] ?? null, 'Capitals do not get round it.');
+
+        // Control: a slug nobody holds is accepted, and so is an empty one (the save path names the page).
+        $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => 'contact']));
+        $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => '']));
+    }
+
+    /**
+     * A page keeps its own friendly URL when it is saved again.
+     *
+     * @return void
+     */
+    public function test_a_page_may_keep_its_own_slug(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $page = $this->pages()->create_page(['menuname' => 'about']);
+        $other = $this->pages()->create_page(['menuname' => 'contact']);
+
+        $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => 'about', 'id' => $page->id]));
+
+        // Control: the same slug posted for a different page is still refused.
+        $this->assertArrayHasKey('menuname', $this->errors(['menuname' => 'about', 'id' => $other->id]));
+    }
+
+    /**
+     * Deleting a page, the way pages.php deletes one, releases its friendly URL.
+     *
+     * @return void
+     */
+    public function test_a_slug_is_released_when_its_page_is_deleted(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $page = $this->pages()->create_page(['menuname' => 'about']);
+
+        // Control: while the page is live the slug is refused.
+        $this->assertArrayHasKey('menuname', $this->errors(['menuname' => 'about']));
+
+        $DB->update_record('local_page', (object) [
+            'id' => $page->id,
+            'deleted' => 1,
+            'menuname' => \local_page\local\slug::deleted_name('about', $page->id),
+        ]);
+
+        $this->assertArrayNotHasKey('menuname', $this->errors(['menuname' => 'about']));
     }
 }

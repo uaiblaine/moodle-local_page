@@ -48,8 +48,14 @@ require_capability('local/page:addpages', $context);
 // Handle page deletion if requested.
 if ($deletepage !== 0) {
     require_sesskey();
-    // Mark the page as deleted in the database.
-    $DB->set_field('local_page', 'deleted', 1, ['id' => $deletepage]);
+    // Mark the page as deleted in the database, and release its friendly URL so another page may use it.
+    if ($pagetodelete = $DB->get_record('local_page', ['id' => $deletepage], 'id, menuname')) {
+        $DB->update_record('local_page', (object) [
+            'id' => $pagetodelete->id,
+            'deleted' => 1,
+            'menuname' => \local_page\local\slug::deleted_name((string) $pagetodelete->menuname, (int) $pagetodelete->id),
+        ]);
+    }
     // Redirect to the same page to prevent resubmission.
     redirect(new moodle_url('/local/page/pages.php'));
 }

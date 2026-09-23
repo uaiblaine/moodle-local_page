@@ -70,6 +70,7 @@ $string['managepages'] = "Manage Pages";
 $string['menu_name'] = 'Friendly URL';
 $string['menu_name_description'] = 'Friendly URL Description';
 $string['menu_name_description_help'] = 'Provide a URL slug for the page (letters, numbers, hyphen, underscore only; invalid characters are removed on save). Web server rewrite rules must map requests such as <strong>about-us</strong> to this plugin\'s viewer if you use root-level URLs.';
+$string['menuname_taken'] = 'This friendly URL is already used by another page. Choose a different one.';
 $string['metaauthor'] = 'Meta Author';
 $string['metaauthor_description'] = 'Meta Author Description';
 $string['metaauthor_description_help'] = 'Provide a meta author for the page. This will be used to identify the author of the page.';
