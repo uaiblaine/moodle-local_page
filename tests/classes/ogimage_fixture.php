@@ -30,7 +30,7 @@ namespace local_page\tests;
  * A size can only be asserted against a file getimagesize() can read, so the images are drawn with
  * GD rather than faked. The files that must NOT pass for an image are a text file and an SVG under
  * an image's name: the file store types both by their extension, and only the content says what
- * they are. It lives in tests/classes because four test files use it, and Moodle autoloads the
+ * they are. It lives in tests/classes because several test files use it, and Moodle autoloads the
  * local_page\tests namespace from here during a PHPUnit run.
  *
  * @package    local_page

@@ -29,13 +29,13 @@ use PHPUnit\Framework\Attributes\CoversClass;
 /**
  * Tests for \local_page\local\links: every address of a page, with the router configured and without.
  *
- * $CFG->routerconfigured is set explicitly in every test, both ways. The fleet stacks copy it into
- * the PHPUnit config and the CI matrix does not, so a test that relied on the ambient value would
- * assert one thing locally and another on CI. The router memoises its base path when it is built,
- * which is why the container is emptied each time the setting changes.
+ * $CFG->routerconfigured is set explicitly in every test, both ways, because the value a test site
+ * inherits from its config.php differs from site to site. The router memoises its base path when it
+ * is built, which is why the container is emptied each time the setting changes.
  *
- * These are plain advanced_testcase tests, which may spell routed addresses freely: the rule against
- * a second router bites only inside a route_testcase, where the harness builds its own.
+ * These are plain advanced_testcase tests, which may spell routed addresses freely. Inside a
+ * route_testcase, whose harness builds its own router, spelling one before the request would build
+ * a second router.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -143,7 +143,7 @@ final class links_test extends \advanced_testcase {
             links::legacy_category_id($categoryid, (int) $categorypage->id)->out(false)
         );
 
-        // A site-wide page keeps upstream's addresses: the builder never invents wwwroot/slug for it.
+        // A site-wide page keeps upstream's addresses: page() never answers wwwroot/slug, which only legacy_menuname() spells.
         $this->assertSame("{$script}?id={$sitepage->id}", links::page($sitepage)->out(false));
         $this->assertSame("{$CFG->wwwroot}/welcome", links::legacy_menuname('welcome')->out(false));
     }
@@ -247,7 +247,7 @@ final class links_test extends \advanced_testcase {
     }
 
     /**
-     * A site-wide page never mints: it has upstream's friendly URL and is out of this scope.
+     * A site-wide page never mints a code: it keeps upstream's friendly URL.
      *
      * @return void
      */

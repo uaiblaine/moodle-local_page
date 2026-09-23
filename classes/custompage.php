@@ -142,10 +142,9 @@ class custompage {
     /**
      * Loads a page from the database by menuname.
      *
-     * Friendly URLs are unique per context, not site-wide, so a lookup has to say which context it
-     * means: the site-wide scope is 0, a category's is its context id (see
-     * {@see \local_page\local\scope}). The default of 0 is what the site-root viewer wants, and
-     * it is also what every caller written before contexts existed meant.
+     * Friendly URLs are unique per context, not site-wide, so the lookup names the context as it is
+     * stored: 0 for a site-wide page, the context id for a category's page (see
+     * {@see \local_page\local\scope}). The default 0 is the site-wide lookup.
      *
      * @param string $menuname The menuname to load.
      * @param bool $editor Whether the page is being loaded for editing.
@@ -195,11 +194,9 @@ class custompage {
     /**
      * Rewrites the @@PLUGINFILE@@ placeholders of a loaded row into real pluginfile URLs.
      *
-     * The area a page's embedded files live in is decided by the row itself: a site-wide page
-     * shares one area under itemid 0, which is what every URL stored before contexts existed
-     * names, while a category page has an area of its own under its id. Both halves were written
-     * out twice, once per loader, with the system context and itemid 0 hard-coded; they are one
-     * method now so the two loaders cannot come to disagree about where a file is.
+     * The row decides the file area: site-wide pages share one area in the system context under
+     * itemid 0, while a category page has its own area in its category context under its page id.
+     * Both loaders call this method so they cannot disagree about where a file is.
      *
      * @param \stdClass $data Row being prepared for the viewer; modified in place.
      * @return void

@@ -38,12 +38,11 @@
 }
 
 /*
- * Dark theme adjustments for card borders. Moodle 5.2 emits exactly ONE dark
- * mechanism - :root[data-bs-theme="dark"], which re-points the --bs-* tokens.
- * Nothing on 5.2 ever writes .theme-dark, so the rule this replaced was dead.
- * The card outline is deliberately lifted off --bs-border-color here:
- * --bs-secondary-color is a light grey under the dark palette, which keeps the
- * card edge visible against the dark surface the way the light theme does.
+ * Dark theme adjustments for card borders. Moodle 5.2's only dark mechanism is
+ * :root[data-bs-theme="dark"], which re-points the --bs-* tokens; it never
+ * emits .theme-dark. The outline uses --bs-secondary-color rather than
+ * --bs-border-color: it is a light grey under the dark palette, which keeps
+ * the card edge visible against the dark surface.
  */
 :root[data-bs-theme="dark"] .custompages-card-body {
     border-color: var(--bs-secondary-color, #adb5bd);
@@ -147,9 +146,8 @@
 
 /*
  * Dark theme adjustments for badge label and URL background. --bs-tertiary-bg
- * is #2b3035 under the dark palette, which is the surface the hard-coded
- * #2b2c31 here was reaching for; the fallbacks only apply on a theme that
- * ships no --bs-* tokens at all.
+ * is #2b3035 under the dark palette; the fallbacks apply only on a theme that
+ * ships no --bs-* tokens.
  */
 :root[data-bs-theme="dark"] .custompages-title-badge-label,
 :root[data-bs-theme="dark"] .custompage-url {

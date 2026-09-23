@@ -29,15 +29,13 @@ use local_page\custompage;
 /**
  * One request for a custom page, decided in one order for every address the viewer answers on.
  *
- * index.php used to load the row, set up $PAGE and ask the access predicate itself, which was fine
- * while every page was the site's. A category page adds a question that has to be asked BEFORE the
- * lookup, and a script is a place no test reaches, so the decision lives here and the script only
- * translates the answer: a redirect target, or a page to render together with whether the viewer
- * may read it.
+ * A category page adds a question that has to be asked before the lookup, and a script is a place
+ * no test reaches, so the decision lives here and index.php and the route controller only translate
+ * the answer: a redirect target, or a page to render together with whether the viewer may read it.
  *
  * The order of {@see category()} is a security property and moves as one block:
  *
- * 1. A VISITOR ({@see publicaccess::is_visitor()}: nobody logged in, or the guest account) is
+ * 1. A visitor ({@see publicaccess::is_visitor()}: nobody logged in, or the guest account) is
  *    refused before anything is looked up unless the category is public. One refusal — the login
  *    page, with wantsurl pointing back here — for a category that is listed, unlisted, hidden or
  *    not there at all, so an anonymous client cannot tell which category ids exist. The refusal
@@ -52,22 +50,23 @@ use local_page\custompage;
  *    refusal for visitors, so a public category's withheld slugs cannot be told from its missing
  *    ones, and for a page kept for logged-in readers the login page is the way in.
  * 5. Then $PAGE: set_category_by_id() first for a category page, because it sets the course and the
- *    context as well and throws once either is set; set_context() otherwise; then the URL.
+ *    context as well and throws once a course or a category is set; set_context() otherwise; then
+ *    the URL.
  *
  * Every address it sets on $PAGE, stores in wantsurl or redirects to is spelled by {@see links}.
  * While the site's router is configured, the legacy script is a doorway to the route: its slug form
- * ({@see category()} with $legacy) answers a 303 to the routed address BEFORE anything else — no
+ * ({@see category()} with $legacy) answers a 303 to the routed address before anything else — no
  * lookup and no visitor refusal, so every id and every slug gets the same answer, and the guard
- * order above runs where the redirect lands. Upstream's ?id= address ({@see legacy()}) can only
- * redirect AFTER the page's own rules and the public predicate have answered, because the redirect
- * spells the page's slug, and handing a slug to a visitor the page is withheld from would tell them
- * what the id names.
+ * order above runs where the redirect lands. The ?id= address ({@see legacy()}) can only redirect
+ * after the page's own rules and the public predicate have answered, because the redirect spells
+ * the page's slug, and handing a slug to a visitor the page is withheld from would tell them what
+ * the id names.
  *
  * No require_login() for the page itself, anywhere. This plugin serves pages to visitors who are not
- * logged in, by design, on a site that keeps $CFG->forcelogin on: forcelogin is not an ambient gate
- * but a set of explicit reads in core, none of which this class makes. index.php keeps upstream's
- * require_login() for a page with an access level, and it runs after this class has answered — so
- * a visitor refused here meets this class's refusal, never that one.
+ * logged in on a site that keeps $CFG->forcelogin on: forcelogin is not an ambient gate but a set of
+ * explicit checks in core, none of which this class makes. local_page_render_view() still calls
+ * require_login() for a page with an access level, but only after this class has answered, so a
+ * visitor refused here meets this class's refusal, never that one.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -77,7 +76,7 @@ final class request {
     /** @var int The status of an answer that renders a page. */
     public const STATUS_OK = 200;
 
-    /** @var int The status of the visitor's login refusal: what core's route redirect and require_login() send. */
+    /** @var int The status of the visitor's login refusal on the route: what core's \core\router\util::redirect() sends. */
     public const STATUS_LOGIN = 302;
 
     /** @var int The status of "read this at its canonical address": the legacy script while the router is configured. */
@@ -128,11 +127,10 @@ final class request {
         require_once($CFG->dirroot . '/local/page/lib.php');
 
         /*
-         * Step 0, the legacy script's slug form while the router is configured: the route is this
-         * address's canonical spelling, so the script answers with a 303 to it before anything else.
-         * No lookup and no visitor refusal here — every id and every slug gets the same redirect, so
-         * the redirect tells nobody anything, and the guard order below runs where it lands. The id
-         * form has no route and carries on.
+         * Step 0, the legacy script's slug form while the router is configured: a 303 to the route,
+         * before any lookup or visitor refusal. Every id and slug gets the same redirect, so it tells
+         * nobody anything, and the guard order below runs where it lands. The id form has no route
+         * and carries on.
          */
         if ($legacy && $slug !== '' && links::routing_enabled()) {
             return self::moved(links::category_page($categoryid, $slug));
@@ -174,11 +172,10 @@ final class request {
         $canview = local_page_user_can_view_page($page, $predicate);
 
         /*
-         * A visitor those rules withhold the page from — a draft, a page for logged-in readers, one
-         * outside its publish window — meets the refusal a missing page gets, not the "no access"
-         * page: otherwise, inside a public category, a 200 against a redirect would tell an
-         * anonymous client which slugs exist; and for a page kept for logged-in readers the login
-         * page, with wantsurl, is the answer that brings them to it.
+         * A visitor those rules withhold the page from (a draft, a page for logged-in readers, one
+         * outside its publish window) meets the refusal a missing page gets, not the "no access"
+         * page: inside a public category a 200 against a redirect would tell an anonymous client which
+         * slugs exist, and for a logged-in-only page the login page with wantsurl is the way in.
          */
         if ($isvisitor && !$canview) {
             return self::refuse($url);
@@ -189,18 +186,18 @@ final class request {
     }
 
     /**
-     * A request on one of upstream's addresses: /local/page/index.php?id=N, or ?menuname=slug.
+     * A request on the script's site-wide addresses: /local/page/index.php?id=N, or ?menuname=slug.
      *
-     * The menuname address is the SYSTEM scope, exactly as it always was; a category's friendly URL
-     * is answered by {@see category()} alone.
+     * The menuname address looks in the system scope only; a category's friendly URL is answered by
+     * {@see category()} alone.
      *
      * A category page can still be reached here through its id, and for a visitor the public
-     * predicate is then applied AFTER the lookup — through local_page_user_can_view_page(), the rule
+     * predicate is then applied after the lookup — through local_page_user_can_view_page(), the rule
      * the file route shares — because the id is all this address carries and the category is only
      * known once the row is read. That is unavoidable for an id address and is the one place the
      * order of {@see category()} does not hold.
      *
-     * While the router is configured, a category page this viewer MAY read is answered with a 303 to
+     * While the router is configured, a category page this viewer may read is answered with a 303 to
      * its routed address instead of being rendered here. The redirect comes after the rules and the
      * predicate on purpose: it spells the page's category and slug, so issuing it to a viewer the
      * page is withheld from would tell them what the id names. They get the refusal, or the "no
@@ -224,11 +221,10 @@ final class request {
         }
 
         /*
-         * The page's own rules, which for a category page include the public predicate: a visitor is
-         * refused there unless the category is public, post-lookup, since the id is all this address
-         * carries. A category page withheld from a visitor — by the predicate or by its own rules —
-         * meets the same refusal as at its category address; a site-wide page keeps upstream's
-         * "no access" render for everybody.
+         * The page's own rules, which for a category page include the public predicate. A category
+         * page withheld from a visitor, by the predicate or by its own rules, meets the same refusal
+         * as at its category address; a site-wide page the viewer may not read renders the "no access"
+         * page, for visitors too.
          */
         $canview = local_page_user_can_view_page($page, $predicate);
         $iscategory = (int) $page->id > 0 && scope::is_category($page);
@@ -242,10 +238,9 @@ final class request {
         }
 
         /*
-         * The canonical of a site-wide page is upstream's, byte for byte: wwwroot/slug when the
-         * request came through the friendly URL, the ?id= address otherwise. A category page's is
-         * links::page(), which for a page READ here is the script's ?category=&page= form — with the
-         * router on, a readable one was redirected above.
+         * A site-wide page's canonical is wwwroot/slug when the request named ?menuname=, the ?id=
+         * address otherwise. A category page's is links::page(), which for a page rendered here is the
+         * script's ?category=&page= form: with the router on, a readable one was redirected above.
          */
         $canonical = null;
         if ($iscategory) {
@@ -301,7 +296,8 @@ final class request {
 
         $context = scope::context($page);
         if ($context->contextlevel == CONTEXT_COURSECAT) {
-            // First: set_category_by_id() sets the course and the context too, and throws once either is set.
+            // First: set_category_by_id() sets the course and the context too, and throws once a course or a
+            // category is set.
             $PAGE->set_category_by_id((int) $context->instanceid);
         } else {
             $PAGE->set_context($context);

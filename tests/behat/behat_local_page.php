@@ -60,12 +60,11 @@ class behat_local_page extends behat_base {
     /**
      * Visits a category's page at its canonical address, as the address builder spells it.
      *
-     * That is the route /local_page/category/N/slug where the site's router is configured — every
-     * fleet stack, whose Behat site reads the same config.php — and the script's own
-     * /local/page/index.php?category=N&page=slug where it is not: moodle-plugin-ci serves the Behat
-     * site with PHP's built-in server, which rewrites nothing and sets no routerconfigured, so a
-     * spelled-out route would 404 there. Asking the builder in this process is what makes the step
-     * visit the address the site itself would link to, on either kind of site.
+     * That is the route /local_page/category/N/slug where the site's router is configured, and the
+     * script's own /local/page/index.php?category=N&page=slug where it is not: a Behat site served by
+     * PHP's built-in server (as moodle-plugin-ci serves it) rewrites nothing and sets no
+     * routerconfigured, so a spelled-out route would 404 there. Asking the builder in this process
+     * makes the step visit the address the site itself would link to, on either kind of site.
      *
      * @Given /^I visit the routed page "(?P<slug_string>(?:[^"]|\\")*)" of the category "(?P<idnumber_string>(?:[^"]|\\")*)"$/
      * @param string $slug The page's friendly URL within the category

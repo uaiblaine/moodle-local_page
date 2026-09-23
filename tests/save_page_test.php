@@ -30,7 +30,8 @@ use local_page\tests\ogimage_fixture;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
- * The save path mints a category page's /p/ code, once, and only while the router is configured.
+ * The save path mints a category page's /p/ code, once, and only while the router is configured,
+ * and stores an og image only when its content is the image its name says.
  *
  * The form is submitted with moodleform::mock_submit() and saved through the renderer, the way
  * edit.php saves it. save_page() ends in redirect(), which under PHPUnit throws
@@ -162,14 +163,12 @@ final class save_page_test extends \advanced_testcase {
     /**
      * A page saved with an og image finds its size already measured, so the first render states it.
      *
-     * The save path writes no measurement of its own, and two things measure the draft on the way in,
-     * both under the content hash the stored file then has, into core/file_imageinfo: core's own
-     * validation of a file manager with restricted types, through file_get_all_files_in_draftarea(),
-     * which calls stored_file::get_imageinfo() on every image; and the form's content check,
-     * \local_page\local\ogimage::is_image(), which reads the same through is_valid_image(). A
-     * save-time measurement in save_page() was written for this before the content check existed and
-     * swept silent (the og_measure_at_save gate reddened nothing), so it was removed; this test holds
-     * the property whichever of the two keeps providing it.
+     * save_page() measures nothing itself. Two things measure the draft on the way in, into
+     * core/file_imageinfo under the content hash the stored file then has: core's validation of a
+     * file manager with restricted types, through file_get_all_files_in_draftarea(), which calls
+     * stored_file::get_imageinfo() on every readable file; and the form's content check,
+     * {@see \local_page\local\ogimage::is_image()}, through is_valid_image(). This test holds the
+     * property whichever of the two provides it.
      *
      * The cache is purged first and asserted cold, so what the save leaves in it can only come from
      * the save; the expected size is the one the PNG was drawn with, never a second measurement.

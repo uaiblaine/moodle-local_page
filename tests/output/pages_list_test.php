@@ -31,12 +31,11 @@ defined('MOODLE_INTERNAL') || die();
 /**
  * Tests for pages_list and page_card.
  *
- * Every link on this screen used to be built for the site-wide context and for no other, which is
- * how three separate defects arrived together: the add button opened the system editor, the delete
- * link asked the system screen to delete a category's row, and the friendly URL advertised an
- * address the site answers with somebody else's page. Since stage 6 a category card's friendly URL
- * is its own category address, and its public short address once one was minted. The site-wide shapes are asserted beside the
- * category ones on purpose — upstream's own screen must come out of this unchanged.
+ * A category's listing keeps every link in that category: the add button opens the editor for a
+ * page of that category, the delete link names the category's context, and the friendly URL is the
+ * page's category address (plus its public short address once one was minted), never the site-wide
+ * wwwroot/<slug>, which serves a different page. The site-wide shapes are asserted beside the
+ * category ones because upstream's own screen must stay unchanged.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -55,10 +54,9 @@ final class pages_list_test extends \advanced_testcase {
     }
 
     /**
-     * A renderer for the renderable to export against.
+     * The plugin's renderer, on the listing screen's URL.
      *
-     * export_for_template() never reads it, but the signature demands one and building it here is
-     * what makes the test exercise the real call rather than a stub.
+     * export_for_template() never reads it but requires one; the rendering test renders with it.
      *
      * @return \renderer_base
      */
@@ -99,7 +97,7 @@ final class pages_list_test extends \advanced_testcase {
 
         $exported = (new pages_list([$page->id => $page], $context))->export_for_template($this->renderer());
 
-        // The add button opens the editor for a new page IN THIS CATEGORY.
+        // The add button opens the editor for a new page in this category.
         $this->assertSame((string) $category->id, $exported->addpageurl->get_param('category'));
         $this->assertNull($exported->addpageurl->get_param('id'));
 
@@ -110,11 +108,7 @@ final class pages_list_test extends \advanced_testcase {
         $this->assertSame((string) $page->id, $card->deleteurl->get_param('pagedel'));
         $this->assertSame(sesskey(), $card->deleteurl->get_param('sesskey'));
 
-        /*
-         * Never the site-wide wwwroot/<slug>, which would advertise an address that serves a different
-         * page altogether: the friendly URL of a category page is its category address, spelled by
-         * the builder — the route while the router is configured, the script otherwise.
-         */
+        // The category address from links::page(), never the site-wide wwwroot/<slug>.
         $this->assertSame('handbook', $card->menuname);
         $this->assertSame(\local_page\local\links::page($page)->out(false), $card->friendlyurl);
         $this->assertNotSame($CFG->wwwroot . '/handbook', $card->friendlyurl);
@@ -123,8 +117,8 @@ final class pages_list_test extends \advanced_testcase {
     /**
      * A category card shows its category address and, once one was minted, its public short address.
      *
-     * The listing is a GET, and a GET never mints: the card only READS the code the save path minted.
-     * Without the router there is no short address worth printing, code or not.
+     * The listing is a GET and never mints: the card only reads the code the save path minted.
+     * Without the router it prints no short address, even when a code exists.
      *
      * @return void
      */
@@ -169,11 +163,9 @@ final class pages_list_test extends \advanced_testcase {
     /**
      * The friendly URL the RENDERED card prints is escaped, and reads the same for a site-wide card.
      *
-     * Without the router a category page's address is the script's ?category=N&page=slug, the first
-     * value of that block with an ampersand in it. Upstream printed the block through a triple stash,
-     * which was harmless while it only ever held wwwroot/slug and puts a raw ampersand into the page
-     * the moment it holds a query string. The exported string is asserted elsewhere; only the rendered
-     * HTML shows which stash it went through, so this test reads the block out of the markup.
+     * Without the router a category page's address is the script's ?category=N&page=slug, which
+     * carries an ampersand; upstream's triple stash would print it raw. Only the rendered HTML shows
+     * which stash the value went through, so this test reads the block out of the markup.
      *
      * @return void
      */
@@ -224,8 +216,8 @@ final class pages_list_test extends \advanced_testcase {
     /**
      * The site-wide listing renders exactly what it rendered before the context dimension existed.
      *
-     * This is the control for the test above: a card that simply stopped emitting friendly URLs,
-     * or an add button that always named a category, would satisfy that one and break this.
+     * The control for test_a_categorys_listing_keeps_every_link_inside_the_category(): links that
+     * always named a category would satisfy that test and fail this one.
      *
      * @return void
      */

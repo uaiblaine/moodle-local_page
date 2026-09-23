@@ -27,15 +27,13 @@ namespace local_page\local;
 /**
  * Normalisation and uniqueness for the menuname column.
  *
- * Upstream treats menuname as a free-text field: nothing stops two live pages carrying the same
- * slug, and nothing releases a slug when a page is deleted. Both matter because the slug is a URL.
- * custompage::load_by_menuname() resolves a duplicate with ORDER BY id DESC and IGNORE_MULTIPLE, so
- * the page a visitor reaches is whichever was saved last — an editor can take over somebody else's
- * address by typing it, without any warning, and the previous owner's page simply stops answering.
+ * The slug is a URL, so it is unique among the live rows of one context, and deleting a page
+ * mangles its slug so the address is released. custompage::load_by_menuname() resolves a duplicate
+ * with ORDER BY id DESC and IGNORE_MULTIPLE, so without the uniqueness rule an editor could take
+ * over another page's address just by typing it.
  *
- * From this fork onwards a slug is unique among rows that are not deleted, and deleting a page
- * mangles its slug so the address is released. A restored page therefore needs a new slug; that is
- * deliberate, because the alternative is a delete that keeps holding an address nobody can see.
+ * A restored page therefore needs a new slug; that is deliberate, because the alternative is a
+ * deleted page that keeps holding an address nobody can see.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -49,7 +47,7 @@ final class slug {
      * @var array Slugs Moodle itself answers on, which a page may therefore not take.
      *
      * Source: the top-level entries of the Moodle 5.2 webroot — every directory and every script
-     * under public/ — plus the segments the 5.1+ routing engine reserves under the site root
+     * under public/ — plus the path segments core's routing engine uses in its own routes
      * (p, s, esm, check, templates, api). A friendly URL is served by rewriting the site root, so
      * a page holding one of these names either never answers (the real path wins) or hides part
      * of Moodle (the rewrite wins). Neither is something an author can debug from the form.
@@ -83,7 +81,7 @@ final class slug {
     /**
      * Whether a slug is one Moodle answers on itself.
      *
-     * Only the form consults this. normalise_all() deliberately does NOT rename a legacy row whose
+     * Only the form consults this. normalise_all() deliberately does not rename a legacy row whose
      * slug turns out to be reserved: that row has been answering at its address for as long as the
      * site's rewrite rules have allowed it to, and renaming it at upgrade time would break a
      * published URL to fix a URL that may never have been broken. New ones are refused on the way
@@ -114,13 +112,13 @@ final class slug {
      * 1. every value is trimmed and lower-cased, and truncated to the column width;
      * 2. a live row with an empty slug is given page-<id>, so every page is addressable;
      * 3. a deleted row is given the deleted_name() form, releasing the address it was holding;
-     * 4. among live rows OF ONE CONTEXT sharing a slug the lowest id keeps it and the others gain
+     * 4. among live rows of one context sharing a slug the lowest id keeps it and the others gain
      *    -<id>.
      *
      * Pass 4 runs in id order and records what it has handed out as it goes, so a suffixed value
      * that happens to collide with a later row's slug pushes that row along too rather than
-     * creating a fresh duplicate. It groups by contextid because uniqueness is per context from
-     * this stage on: two categories may each own a page called "contato" and neither has to move.
+     * creating a fresh duplicate. It groups by contextid because uniqueness is per context: two
+     * categories may each own a page called "contato" and neither has to move.
      *
      * A slug that is_reserved() would refuse is left exactly as it is, deliberately — see that
      * method for why a rename at upgrade time is the more expensive mistake.
@@ -207,7 +205,7 @@ final class slug {
      * Deleted rows are ignored on purpose: their slug has been mangled by deleted_name() and the
      * address they used to hold is free again.
      *
-     * Uniqueness is PER CONTEXT, so the answer depends on which scope is asking: two categories
+     * Uniqueness is per context, so the answer depends on which scope is asking: two categories
      * may each own "contato", and neither collides with a site-wide page of that name. The
      * parameter carries the stored convention, 0 for the system scope — see
      * {@see \local_page\local\scope} for why the column reads that way.

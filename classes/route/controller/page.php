@@ -41,10 +41,10 @@ use Psr\Http\Message\ServerRequestInterface;
  * - No requirelogin. The page serves visitors of a public category on a site that forces login,
  *   and decides for itself who reads what; a login requirement here would refuse them before the
  *   decision was asked.
- * - Plain parameters, never a category path type. A resolver of that kind looks the category up
- *   and throws not_found before the controller runs, and a 404 for a missing category against a
- *   redirect for a real one is an existence oracle for an anonymous client — the one thing the
- *   request class is arranged to deny. The slug is ALPHANUMEXT, the character set every stored
+ * - Plain parameters, never a resolving path type such as core's path_course. A resolver looks the
+ *   record up and throws not_found before the controller runs, and a 404 for a missing category
+ *   against a redirect for a real one is an existence oracle for an anonymous client — the one thing
+ *   the request class is arranged to deny. The slug is ALPHANUMEXT, the character set every stored
  *   slug is cleaned to; anything else is refused by core's request validator as not found, which
  *   says something about the characters and nothing about which pages exist.
  * - GET only. Nothing on the page posts back to it.
@@ -93,7 +93,7 @@ class page {
 
         $body = local_page_render_view($answer);
 
-        // Guarded like core's restricted_module controller: under PHPUnit the header renders nothing.
+        // Header and footer are written the way core's restricted_module route controller writes them.
         if ($header = $OUTPUT->header()) {
             $response->getBody()->write($header);
         }

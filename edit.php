@@ -34,10 +34,10 @@ $pageid = optional_param('id', 0, PARAM_INT); // Get page ID parameter.
 $categoryid = optional_param('category', 0, PARAM_INT); // Course category, for a new category page.
 
 /*
- * Which context this edit is in. For an existing page the stored row decides and the URL cannot
- * argue; for a new page the ?category= parameter does. The row is read here only to answer that
- * question — the authoritative re-check is local_page_require_editable_page() below, which reads
- * it again with the deleted filter and is the call that refuses.
+ * Which context this edit is in. For an existing page the stored row decides, whatever the URL
+ * says; for a new page the ?category= parameter does. The row is read here only to answer that
+ * question — the authoritative check is local_page_require_editable_page() below, which reads it
+ * again with the deleted filter and is the call that refuses.
  */
 $editrow = $pageid > 0 ? $DB->get_record('local_page', ['id' => $pageid, 'deleted' => 0]) : false;
 if ($editrow) {
@@ -53,8 +53,9 @@ if ($editrow) {
 if ($context->contextlevel == CONTEXT_COURSECAT) {
     /*
      * set_category_by_id() sets the course to the site and the context to the category itself, and
-     * throws once either has been set (pagelib.php:1478-1490) — so it has to come before every
-     * other set_*() call, and it replaces set_context() rather than following it.
+     * throws once a course or a category has been set (see moodle_page::set_category_by_id()), so it
+     * has to come before every other set_*() call, and it replaces set_context() rather than following
+     * it.
      */
     $PAGE->set_category_by_id((int) $context->instanceid);
 } else {

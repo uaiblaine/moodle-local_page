@@ -27,21 +27,18 @@ namespace local_page\local;
 /**
  * Which context a page belongs to, and which capability governs it there.
  *
- * Until this stage every row lived in the system context and the code said so in nine places, each
- * of them a bare context_system::instance(). A page now carries its own context, and this class is
- * the only thing that reads the column: a site that adds a third context level later changes this
- * file, not the nine call sites.
+ * A page carries its own context in {local_page}.contextid, and this class decides what a stored
+ * value means, so that supporting another context level later changes this file rather than every
+ * call site.
  *
- * **A stored contextid of 0 means the system context**, and that convention is the point of this
- * class. Context ids are row ids in {context}: they are assigned at install time, they differ
- * between sites, and they are not available when a column default or an XMLDB file is written. So
- * the column cannot default to "the system context id" — it defaults to 0, and 0 is resolved here.
- * Every row that existed before this stage therefore reads as a system page with no migration at
- * all, which is the whole reason the design is additive.
+ * A stored contextid of 0 means the system context. Context ids are row ids in {context}: they are
+ * assigned at install time and differ between sites, so no column default or XMLDB file can name
+ * the system context id. The column defaults to 0 and 0 is resolved here, which is also why rows
+ * created before the column existed read as site-wide pages without a data migration.
  *
- * The inverse mapping lives in stored_contextid(): system becomes 0 again, a category context
- * stores its own id. Only those two levels are accepted, in both directions; anything else is a
- * programming error rather than a state a site can reach, and is refused with a coding_exception.
+ * stored_contextid() is the inverse mapping: the system context stores 0, a category context its
+ * own id. It and capability() accept only those two levels and throw a coding_exception for any
+ * other, which is a programming error rather than a state a site can reach.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine

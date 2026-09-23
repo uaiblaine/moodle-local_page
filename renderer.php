@@ -148,11 +148,9 @@ class local_page_renderer extends plugin_renderer_base {
         $form = '';
 
         /*
-         * Which rule applies to the stored HTML is decided by where the page lives, and the
-         * decision itself is local_page_render_content() so that a test can reach it without a
-         * renderer. A site-wide page keeps upstream's trusted, uncleaned rendering; a category
-         * page goes through core's trusttext rules, honouring $CFG->enabletrusttext and the
-         * author's moodle/site:trustcontent exactly as core does.
+         * A site-wide page keeps upstream's trusted, uncleaned rendering; a category page goes
+         * through core's trusttext rules. See local_page_render_content(), which a test can reach
+         * without a renderer.
          */
         $iscategory = \local_page\local\scope::is_category($page);
         $pagecontent = local_page_render_content($page, (string) $this->adduserdata($page->pagecontent));
@@ -230,22 +228,18 @@ class local_page_renderer extends plugin_renderer_base {
         $formcontext = $context ?? context_system::instance();
         $mform = new pages_edit_product_form($page, $formcontext);
         if ($mform->is_cancelled()) {
-            // Back to the listing of the context being edited. Without the context this landed on
-            // the site-wide screen, which refuses a category author outright.
+            // Back to the listing of the context being edited: the site-wide listing refuses a
+            // category author.
             redirect(local_page_list_url($formcontext));
         } else if ($data = $mform->get_data()) {
             require_once($CFG->libdir . '/formslib.php');
 
             /*
-             * Re-check the posted id before anything is written. The form was rendered under a
-             * capability check, but the id travels in a hidden field and the row may have been
-             * deleted in between, so the write path has to establish for itself that the target
-             * exists and that this caller may edit it. The row it returns is what the id below is
-             * taken from — never the posted value.
-             *
-             * The posted context is re-checked in the same call, and for an EXISTING page it is
-             * then discarded: local_page_save_target_context() answers with the stored row's
-             * context, so a page cannot be moved between contexts by editing a hidden field.
+             * Re-check before anything is written: the id travels in a hidden field and the row may
+             * have been deleted since the form was rendered. The id written below comes from the
+             * returned row, never from the post. For an existing page the posted context is then
+             * discarded in favour of the stored row's (local_page_save_target_context()), so a
+             * hidden field cannot move a page between contexts.
              */
             $postedcontextid = (int) ($data->contextid ?? 0);
             $editable = local_page_require_editable_page((int) $data->id, $postedcontextid);
@@ -260,12 +254,9 @@ class local_page_renderer extends plugin_renderer_base {
             }
 
             /*
-             * Where the embedded files live. A site-wide page keeps the upstream arrangement —
-             * one shared area under itemid 0 — because every stored URL of every existing page
-             * names that itemid. A category page uses its own id instead, which is what lets the
-             * pluginfile callback authorise a file with one row lookup rather than by searching
-             * the content of every page. A NEW category page has no id yet, so its text is stored
-             * raw and rewritten immediately after the insert, below.
+             * Where the embedded files live: see pages_edit_product_form::pagecontent_itemid(). A
+             * new category page has no id yet, so its text is stored raw and rewritten right after
+             * the insert, below.
              */
             $newcategorypage = $iscategory && $itemid <= 0;
             if ($newcategorypage) {
@@ -288,10 +279,8 @@ class local_page_renderer extends plugin_renderer_base {
             $recordpage->id = $editable === null ? 0 : (int) $editable->id;
             $recordpage->pagename = $data->pagename;
             /*
-             * The head field is system scope only — no sanitiser exists for head markup, so a
-             * category author is not offered it and a category page never stores one. The form
-             * omits the element under the same two conditions, so $data->meta does not exist here
-             * for a category page either.
+             * A category page never stores head HTML (see local_page_head_html()). The form omits
+             * the field under the same two conditions, so $data->meta is not even set for one.
              */
             if (!$iscategory && get_config('local_page', 'additionalhead')) {
                 $recordpage->meta = $data->meta;
@@ -317,18 +306,12 @@ class local_page_renderer extends plugin_renderer_base {
             $recordpage->categoryid = $iscategory ? (int) $writecontext->instanceid : null;
 
             /*
-             * Whether THIS author was trusted with unclean HTML, recorded on every save including a
-             * site-wide one, where it is harmless and true rather than assumed. The viewer and the
-             * editor both read it back for a category page; a site-wide page ignores it.
+             * Whether this author may store unclean HTML here, recorded on every save. Only a
+             * category page reads it back, in the viewer and the editor.
              */
             $recordpage->contenttrust = local_page_content_trust($writecontext);
 
-            /*
-             * Publishing to visitors who are not logged in is a capability of its own. The form
-             * freezes the field when the editor does not hold it, but a frozen select stops
-             * nothing that is posted by hand, so the record is corrected here — the last point
-             * before it is written.
-             */
+            // The form only freezes the publish field; this is what enforces it. See local_page_apply_publish_gate().
             $recordpage = local_page_apply_publish_gate($recordpage, $writecontext);
 
             /*
@@ -359,9 +342,8 @@ class local_page_renderer extends plugin_renderer_base {
                 $result = $page->update($recordpage);
 
                 /*
-                 * A page saved with no slug would be reachable only by id, and normalise_all()
-                 * would name it at the next upgrade rather than now. Name it here instead, so that
-                 * every page is addressable from the moment it exists.
+                 * A page saved with no slug would be reachable only by id, so it is named
+                 * page-<id> now, the name slug::normalise_all() gives such a row at upgrade.
                  */
                 if ($result && $result > 0 && $recordpage->menuname === '') {
                     $DB->set_field('local_page', 'menuname', 'page-' . (int) $result, ['id' => (int) $result]);

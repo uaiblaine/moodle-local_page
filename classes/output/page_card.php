@@ -106,14 +106,13 @@ class page_card implements renderable, templatable {
         }
 
         /*
-         * Generate status badge. The string id is a literal per arm, never
-         * get_string('status_' . $status): a dynamic id is invisible to the lang
-         * tooling, so an unknown status would reach get_string() and raise a
-         * developer notice instead of simply rendering no badge.
+         * Generate status badge. Each arm names its string id literally, never
+         * get_string('status_' . $status): the lang tooling can see every id, and
+         * an unknown status renders no badge instead of asking for a missing string.
          *
-         * Every bg-* utility is paired with a text utility. Bootstrap 5 defaults
-         * badge text to white, which is unreadable on bg-warning (contrast 1.95
-         * against the 4.5:1 AA floor), so the pairing is not optional.
+         * Every bg-* utility is paired with a text utility: Bootstrap 5 defaults
+         * badge text to white, which gives 1.95:1 contrast on bg-warning against
+         * the 4.5:1 AA minimum.
          */
         $badgeclasses = [
             'live' => 'badge bg-success text-white',
@@ -149,11 +148,9 @@ class page_card implements renderable, templatable {
         $deleteparams = ['pagedel' => $this->id, 'sesskey' => \sesskey()];
         if ($iscategory) {
             /*
-             * The delete action resolves its context from this parameter, checks the capability
-             * there and then refuses a row that does not belong to it. Without the parameter the
-             * link asks the site-wide screen to delete a category's page, and that is refused
-             * twice over — by the capability for a category manager, and by the row comparison
-             * even for an administrator.
+             * pages.php resolves its context from this parameter, checks the capability there and
+             * refuses a row of any other context. Without it the link would ask the site-wide screen
+             * to delete a category's page, which is refused for everybody, administrators included.
              */
             $deleteparams['contextid'] = (int) $context->id;
         }
@@ -161,11 +158,10 @@ class page_card implements renderable, templatable {
 
         /*
          * Add friendly URL if menuname exists. A category page never gets the site-wide form:
-         * wwwroot/<slug> is answered by the web server rewrite for site pages only, and printing it
-         * here would advertise an address that serves somebody else's page. Its friendly URL is its
-         * canonical address instead — the route while the router is configured, the script's
-         * ?category=&page= form otherwise — and, once one was minted at save, its public short
-         * address to share. Reading the code is all a listing does: a GET never mints one.
+         * wwwroot/<slug> is rewritten to site-wide pages only, so it would advertise an address that
+         * serves somebody else's page. Its friendly URL is its canonical address instead, plus its
+         * public short address once one was minted at save. The listing only reads the code: a GET
+         * never mints one.
          */
         if ($this->menuname && !$iscategory) {
             $data->menuname = $this->menuname;

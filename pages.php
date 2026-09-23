@@ -47,8 +47,8 @@ $listurl = local_page_list_url($context);
 
 // Set PAGE variables for the current page.
 if ($context->contextlevel == CONTEXT_COURSECAT) {
-    // Sets the course, the category and the context in one call, and throws if anything else
-    // already set one of them — so it comes before every other set_*() call (pagelib.php:1478).
+    // Sets the course, the category and the context in one call, and throws once a course or a
+    // category has been set, so it comes before every other set_*() call.
     $PAGE->set_category_by_id((int) $context->instanceid);
 } else {
     $PAGE->set_context($context);
@@ -58,10 +58,9 @@ $PAGE->set_pagelayout('base');
 $PAGE->set_title(get_string('pagesetup_title', 'local_page'));
 if ($context->contextlevel == CONTEXT_COURSECAT) {
     /*
-     * Say whose pages these are. The heading is read with $alwaysreturnhidden, because
+     * Say whose pages these are. The category is read with $alwaysreturnhidden, because
      * core_course_category::get() otherwise throws 'cannotviewcategory' for a category the viewer
-     * cannot browse — and who may manage this screen was already decided by the capability check
-     * below. A heading is not the place to apply a second, different rule.
+     * cannot browse; who may use this screen is decided by the capability check below.
      */
     $PAGE->set_heading(core_course_category::get((int) $context->instanceid, MUST_EXIST, true)->get_formatted_name());
 } else {

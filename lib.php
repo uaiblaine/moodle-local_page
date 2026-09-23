@@ -57,8 +57,8 @@ function local_page_xy_simple_content_builder_is_available(): bool {
  * SVG is excluded because ogimage URLs are anonymous-readable and image/svg+xml can execute script.
  * The file manager applies accepted_types to the file NAME only; \local_page\local\ogimage::is_image()
  * holds the content to the same list, in the editor's validation, the file route and the head tags.
- * The 600 KB cap is what WhatsApp was measured to accept for a link preview; a larger image is
- * silently dropped from the card rather than refused.
+ * The 600 KB cap is what WhatsApp accepts for a link preview; a larger image is silently dropped
+ * from the card rather than refused.
  *
  * @return array
  */
@@ -74,14 +74,11 @@ function local_page_ogimage_filemanager_options(): array {
 /**
  * The listing screen's address for a context.
  *
- * Every screen and every redirect goes through this function rather than writing the URL out,
- * because the contextid parameter is what keeps an author inside the category they were
- * authorised in: a link that loses it lands on the site-wide screen, where pages.php checks
- * local/page:addpages and refuses them. That is the shape three separate defects took before this
- * stage — the add button, the cancel redirect and the delete link each built their own URL.
+ * Every screen and every redirect builds the address here, because the contextid parameter is what
+ * keeps an author inside the category they were authorised in: a link that loses it lands on the
+ * site-wide screen, where pages.php requires local/page:addpages and refuses them.
  *
- * A system context adds no parameter at all, so the site-wide addresses stay exactly what upstream
- * produced.
+ * A system context adds no parameter, so the site-wide address stays upstream's.
  *
  * @param \core\context $context Context whose pages are listed
  * @return \moodle_url
@@ -102,11 +99,9 @@ function local_page_list_url(\core\context $context): \moodle_url {
 /**
  * The editor's address for a page, or for a new page in a context.
  *
- * An existing page is named by its id alone: edit.php reads the stored row and takes the context
- * from it, so a context parameter beside the id would be a second opinion about a question the row
- * has already answered. A NEW page has no row, so the category has to travel in the URL — and it
- * travels as the category id rather than the context id, because that is what edit.php's
- * ?category= parameter has meant since the context dimension was added.
+ * An existing page is named by its id alone: edit.php takes the context from the stored row, so a
+ * context parameter beside the id would only be a second opinion. A new page has no row, so its
+ * category travels in the URL as edit.php's ?category= parameter, a category id (not a context id).
  *
  * @param \core\context $context Context the page belongs to, or is to be created in
  * @param int $pageid Existing page id, or 0 for a new page
@@ -130,13 +125,13 @@ function local_page_edit_url(\core\context $context, int $pageid = 0): \moodle_u
 /**
  * Adds the category's own pages to its administration menu.
  *
- * Core calls this for every plugin declaring it, from settings_navigation::load_category_settings()
- * (lib/classes/navigation/settings_navigation.php:1628-1633). It is the only entry point a category
- * manager has: the admin tree's "Manage pages" page is gated on local/page:addpages and lists the
- * site's pages, so without this node the category screens exist and nothing links to them.
+ * Core calls this for every plugin declaring it, from
+ * {@see \core\navigation\settings_navigation::load_category_settings()}. It is the only link a
+ * category manager has to the category screens: the admin tree's "Manage pages" page is gated on
+ * local/page:addpages and lists the site's pages.
  *
- * The capability is read at the category, never at the system context, which is what makes the
- * delegation mean anything — a manager of one category gets the node there and in no other.
+ * The capability is read at the category, never at the system context, so a manager of one
+ * category gets the node there and in no other.
  *
  * @param \core\navigation\navigation_node $navigation The category settings node to extend
  * @param \core\context $context The course category context the menu is being built for
@@ -170,10 +165,10 @@ function local_page_extend_navigation_category_settings(
  * Soft-deletes the pages of a category core is deleting with all its content.
  *
  * Core calls this for every plugin declaring it, from core_course_category::delete_full(), before it
- * deletes anything. What it deletes afterwards is why nothing but the rows is touched here: the
- * category's children (each through its own delete_full(), which calls this again for that child),
- * its courses and content, the category row and finally the category's CONTEXT, which purges every
- * file stored in it — the pages' files included.
+ * deletes anything. What it deletes afterwards is why only rows (the pages and their short links)
+ * are touched here: the category's children (each through its own delete_full(), which calls this
+ * again for that child), its courses and content, the category row and finally the category's
+ * CONTEXT, which purges every file stored in it — the pages' files included.
  *
  * @param \stdClass $category The category's record, as core_course_category::get_db_record() returns it
  * @return void
@@ -206,11 +201,10 @@ function local_page_pre_course_category_delete_move(
  * Whether $now falls inside a page's publish window.
  *
  * A bound of 0 (or missing) means "no bound", so a row with neither date set is always inside its
- * window. This is the four-branch arithmetic local_page_user_can_view_page() used to carry inline,
- * lifted out unchanged: both that predicate and local_page_ogimage_is_servable() call it, so the
- * public page and its Open Graph image cannot come to disagree about when a page is published.
+ * window. Both local_page_user_can_view_page() and local_page_ogimage_is_servable() call it, so the
+ * public page and its Open Graph image cannot disagree about when a page is published.
  *
- * Note it answers about the WINDOW only. Status, access level and onlyloggedin are each caller's
+ * It answers about the window only: status, access level and onlyloggedin are each caller's
  * business, and they differ between the two callers on purpose.
  *
  * @param object $page Row from {local_page} (stdClass) or an object exposing pagedate and enddate
@@ -236,16 +230,12 @@ function local_page_publish_window_is_open(object $page, int $now): bool {
  *
  * True only for a persisted, not soft-deleted, 'live' row that is inside its publish window.
  *
- * It deliberately consults NEITHER accesslevel NOR onlyloggedin NOR any capability, which is the
- * whole difference between this predicate and local_page_user_can_view_page(). An og:image URL is
- * fetched by a scraper — a link preview in a chat client, a crawler, a social network — and that
- * fetch is anonymous and carries no Moodle session, so gating the image on a viewer's capabilities
- * would break every preview rather than protect anything. Nothing is leaked by the difference: the
- * og:image meta tag is emitted only for a page the viewer has passed local_page_user_can_view_page()
- * on (local_page_render_view() registers the head tags only then), so a visitor who may not read an
- * onlyloggedin or capability restricted page is never handed the image URL in the first place.
- * What this gate DOES enforce is the part a scraper must not be able to walk around: a draft,
- * archived, expired, not-yet-started or deleted page has no published image, whoever asks.
+ * Unlike local_page_user_can_view_page(), it deliberately ignores accesslevel, onlyloggedin, the
+ * public-category clause and every capability: an og:image is fetched by scrapers (chat link
+ * previews, crawlers) with no Moodle session, so a viewer gate would break every preview. Nothing
+ * leaks by it, because local_page_render_view() registers the og:image tag only for a viewer who
+ * may read the page. What it does enforce is that a draft, archived, expired, not-yet-started or
+ * deleted page has no published image, whoever asks.
  *
  * @param object $page Row from {local_page} (stdClass)
  * @return bool
@@ -314,9 +304,8 @@ function local_page_require_editable_page(int $pageid, int $contextid = 0): ?\st
  * {@see \local_page\local\scope}), so a row and a context object can be compared without loading
  * the row's context at all.
  *
- * It exists as a function because the listing screen's delete action needs it and pages.php is a
- * script: a guard that only ever runs inside a script cannot be held by a test, and an unheld
- * guard is the one that quietly stops working.
+ * It is the guard of the listing screen's delete action, kept out of pages.php so that a test can
+ * reach it.
  *
  * @param \stdClass $row Row from {local_page}
  * @param \core\context $context Context the caller is acting in
@@ -351,22 +340,16 @@ function local_page_save_target_context(?\stdClass $editable, int $contextid): \
 /**
  * Whether the author writing in a context is trusted with unclean HTML, in core's sense.
  *
- * Core's rule, not this plugin's: trusttext_trusted() is true only when $CFG->enabletrusttext is
- * on AND the user holds moodle/site:trustcontent at the context being written in
- * (lib/weblib.php:948-951). Both halves are load-bearing here.
+ * Core's rule, {@see trusttext_trusted()}: true only when $CFG->enabletrusttext is on AND the user
+ * holds moodle/site:trustcontent at the context being written in. The setting is off by default, so
+ * on an ordinary site this answers 0 for everybody, the administrator included, and every category
+ * page is cleaned.
  *
- * The setting is off by default on every Moodle site, so on an ordinary site this answers 0 for
- * everybody including the administrator, and every category page is cleaned. That is the intended
- * reading: the trust feature is something a site turns on deliberately.
+ * The context is the page's own: somebody trusted in one category is trusted there and nowhere else.
  *
- * The context is the PAGE'S OWN, which is what keeps the delegation honest. Somebody trusted in
- * their own category is trusted there and nowhere else; being handed one category's pages does
- * not make them a site-wide content author.
- *
- * The answer is stored in {local_page}.contenttrust at save time rather than recomputed when the
- * page is rendered, which is what core does too (mod/forum/lib.php:253 stores messagetrust the
- * same way): the question is whether the person who WROTE this HTML was trusted, and the person
- * reading it later is somebody else entirely.
+ * The answer is stored in {local_page}.contenttrust at save time rather than recomputed at render
+ * time, as mod_forum stores messagetrust: what matters is whether the person who wrote the HTML was
+ * trusted, not who reads it later.
  *
  * @param \core\context $context Context the page is being written in
  * @return int 1 when the current user may store unclean HTML there, 0 otherwise
@@ -378,28 +361,20 @@ function local_page_content_trust(\core\context $context): int {
 /**
  * Renders one stored HTML field of a page for the public viewer.
  *
- * The decision this function makes is which of two rules applies, and it lives here rather than in
- * the renderer so that a test can reach it without building one.
+ * A site-wide page keeps upstream's rendering: trusted and not cleaned. Its author holds
+ * local/page:addpages, declared RISK_XSS because a site page carries editor HTML, raw Content HTML
+ * and optional head markup, so cleaning it would break pages a site already serves.
  *
- * A SITE-WIDE page keeps upstream's rendering byte for byte: trusted and not cleaned. Whoever
- * holds local/page:addpages is trusted with arbitrary markup by construction — the capability is
- * declared RISK_XSS precisely because a site page carries editor HTML, raw Content HTML and
- * optional head markup — so cleaning it would break every page such a site already serves.
+ * A category page goes through core's trusttext rules: the text is cleaned unless its author was
+ * trusted when they saved it. Two core rules apply on top, and cannot be worked around here:
  *
- * A CATEGORY page goes through core's trusttext rules instead. The text is cleaned unless the
- * author was trusted when they saved it, and two facts about core decide what that means:
+ * - with $CFG->enabletrusttext off (the default) nothing is trusted, so the content is cleaned
+ *   even when the stored flag says its author was trusted;
+ * - $CFG->forceclean cleans everything, the site-wide branch included.
  *
- * - with $CFG->enabletrusttext off — the default on every site — nothing is trusted, so the
- *   content is cleaned even when the stored flag says its author was trusted at the time;
- * - $CFG->forceclean overrides the lot (lib/classes/formatting.php:195), including the site-wide
- *   branch above, because an administrator who sets it has said they want everything cleaned.
- *
- * Neither of those is this plugin's rule, and neither can be worked around from here.
- *
- * Note that the category branch passes the page's own context, so the filters that run over the
- * text are the ones configured where the page lives; and that the Content HTML block of a category
- * page comes through this same call, so it is filtered as well as cleaned. That is intended: in a
- * category there is no second, unfiltered channel.
+ * The category branch passes the page's own context, so the filters configured where the page
+ * lives run over the text. A category page's Content HTML block comes through this same call, so
+ * it is filtered as well as cleaned: in a category there is no unfiltered channel.
  *
  * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
  * @param string $text The field's stored text, with placeholders already substituted
@@ -420,21 +395,15 @@ function local_page_render_content(object $page, string $text): string {
 /**
  * The text of one stored field as it may be handed back to an editor.
  *
- * This is the half of the trusttext contract that is easy to leave out, and leaving it out undoes
- * the other half: without it an untrusted editor opens a category page a trusted colleague wrote,
- * the script the viewer never sees arrives in their form, and saving the page unchanged stores it
- * again under their own — untrusted — flag. Core solves it with trusttext_pre_edit(), and
- * mod_forum calls that function before editing a post (mod/forum/post.php:344).
+ * The pre-edit half of the trusttext contract: a category page is cleaned before it reaches the
+ * editor unless it was stored as trusted and the current editor is trusted too, so an untrusted
+ * editor is never handed the uncleaned markup a trusted colleague stored. It calls core's
+ * {@see trusttext_pre_edit()}, as mod_forum does before editing a post, so core's rule (including
+ * its FORMAT_MARKDOWN exception) cannot drift. The ad-hoc object exists because that function
+ * reads sibling columns named after the field ({$field}trust, {$field}format), while this plugin
+ * stores one contenttrust flag for both HTML fields, written by the same author in the same save.
  *
- * It calls core's function rather than restating the two-line rule, so that the rule cannot drift:
- * core also declines to clean FORMAT_MARKDOWN, and anything it adds later arrives here for free.
- * The ad-hoc object exists because trusttext_pre_edit() reads sibling columns named after the
- * field ({$field}trust, {$field}format) while this plugin stores ONE contenttrust flag covering
- * both of its HTML fields — they are written by the same author in the same save, so one flag is
- * the truth about both.
- *
- * A SITE-WIDE page is returned unchanged, which is upstream's behaviour and the counterpart of the
- * rendering rule: its author is trusted by construction.
+ * A site-wide page is returned unchanged, as upstream does: its author is trusted by construction.
  *
  * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
  * @param string $field Name of the stored field, 'pagecontent' or 'contenthtml'
@@ -461,14 +430,13 @@ function local_page_editable_content(object $page, string $field, \core\context 
 /**
  * The per-page HTML a page contributes to the document head.
  *
- * The head field is SYSTEM SCOPE ONLY, and the reason is that there is no sanitiser for head
- * markup: everything else a page stores is body HTML, which clean_text() understands, while a
- * <head> fragment can carry a script element, a meta refresh or a base tag that no HTML purifier
- * is written to judge. So the field is not offered to a category author, and a row that holds one
- * from before — or from a site-wide page later moved by hand — is ignored rather than rendered.
+ * Site-wide pages only, because no sanitiser exists for head markup: clean_text() judges body HTML,
+ * while a <head> fragment can carry a script element, a meta refresh or a base tag. So the field is
+ * not offered to a category author, and a category row that holds one anyway (stored earlier, or a
+ * site-wide page moved by hand) is ignored rather than rendered.
  *
- * The site setting is read here too, so index.php has one thing to ask instead of two, and so that
- * this decision is reachable by a test: index.php is a script.
+ * The site setting is read here too, so that \local_page\output\opengraph::for_page() asks one
+ * question and a test can reach the whole decision.
  *
  * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
  * @return string The stored head HTML, or an empty string when it must not be emitted
@@ -489,11 +457,10 @@ function local_page_head_html(object $page): string {
 /**
  * Renders a page the viewer's request class decided to render, for every address that serves one.
  *
- * Two entry points serve a page: index.php, the script upstream wrote, and
- * \local_page\route\controller\page, the routed category address. Both hand the request's answer
- * here, so the two addresses cannot come to render different pages — this is what index.php did
- * after the decision, moved rather than copied, including upstream's require_login() for a page
- * with an access level and its html_writer calls.
+ * Two entry points serve a page: index.php and \local_page\route\controller\page, the routed
+ * category address. Both hand the request's answer here, so the two addresses cannot render
+ * different pages. The body is upstream's index.php rendering moved here, including its
+ * require_login() for a page with an access level and its html_writer calls.
  *
  * It performs the side effects on $PAGE the page needs before the header is printed — the layout,
  * the title and heading, the body classes, the page type and the head tags, which it registers
@@ -588,17 +555,16 @@ function local_page_render_view(\local_page\local\request $answer): string {
 /**
  * Forces a category page to logged-in visitors unless its editor may publish to the open web.
  *
- * Publishing is a separate power from authoring, which is why local/page:publishcategorypages is a
- * separate capability: writing a page is an editing act, putting it in front of visitors who are
- * not logged in is not, and a site may well delegate the first without the second.
+ * Publishing is a separate power from authoring, hence local/page:publishcategorypages: a site may
+ * delegate writing a category's pages without letting that author put them in front of visitors
+ * who are not logged in.
  *
- * The gate is applied on the SAVE PATH, not only in the form. The form freezes the field so the
- * reason is visible while editing, but the field travels through the browser and a frozen select
- * is no barrier to a posted value — so the record is corrected here, right before it is written,
- * whatever arrived.
+ * Applied on the save path, not only in the form: the form freezes the field so the reason is
+ * visible, but a frozen select is no barrier to a posted value, so the record is corrected here,
+ * right before it is written.
  *
- * The system context is returned untouched: a site-wide page is governed by local/page:addpages
- * alone, exactly as upstream has it, and nothing in this stage narrows that.
+ * A site-wide page is returned untouched: it is governed by local/page:addpages alone, as upstream
+ * has it.
  *
  * @param \stdClass $record The record about to be written to {local_page}
  * @param \core\context $context Context the page is being saved into
@@ -625,18 +591,15 @@ function local_page_apply_publish_gate(\stdClass $record, \core\context $context
  * site configuration capability override). Pages without a positive database id or with soft-delete
  * set are never viewable.
  *
- * Every capability it reads — the site configuration override, the entries of accesslevel, and the
- * editor-preview branch — is evaluated at the page's OWN context. A page belonging to a course
- * category is previewed by whoever may author that category's pages, not by whoever may author the
- * site's, and an accesslevel entry means what it means where the page lives.
+ * Every capability it reads (the site configuration override, the accesslevel entries and the
+ * editor-preview branch) is evaluated at the page's own context, so a category page is previewed
+ * by whoever may author that category's pages, and an accesslevel entry means what it means there.
  *
- * A page belonging to a course category is on the internet only when its category is: a VISITOR
- * (nobody logged in, or the guest account) is refused unless \local_page\local\publicaccess says
- * the category is public, and that adapter fails closed when local_unlistedcourses is not installed.
- * The clause lives here rather than only in the viewer because this function is also what the
- * pluginfile route asks about a category page's embedded files — without it the viewer would refuse
- * a visitor the page while the file route served them its images. A logged-in user is never asked
- * about, and a site-wide page never is either.
+ * A category page reaches a visitor (nobody logged in, or the guest account) only when
+ * \local_page\local\publicaccess says its category is public; that adapter fails closed when
+ * local_unlistedcourses is not installed. The clause lives here, not only in the viewer, because
+ * the pluginfile route asks this function about a category page's embedded files. It never applies
+ * to a logged-in user or to a site-wide page.
  *
  * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage} with the same fields
  * @param string|null $predicate Public predicate class for the category clause; tests pass a double
@@ -700,11 +663,7 @@ function local_page_user_can_view_page(object $page, ?string $predicate = null):
         return $canaccess && $permissions;
     }
 
-    /*
-     * The four-branch window arithmetic that stood here moved into
-     * local_page_publish_window_is_open() unchanged, so that the og:image gate reads the publish
-     * window through the same code this predicate does and the two cannot drift apart.
-     */
+    // The window is shared with the og:image gate; see local_page_publish_window_is_open().
     $istimevalid = local_page_publish_window_is_open($page, time()) && $page->status === 'live' && $permissions;
 
     return $canaccess && $istimevalid;
@@ -742,13 +701,11 @@ function local_page_haystack_contains_pluginfile_needle(string $hay, string $nee
  * Candidate rows are still found with SQL LIKE on the filename; references are then confirmed with
  * anchored matching so one filename cannot satisfy a request for a strict prefix of another.
  *
- * Only rows of the context the file was requested through are searched, and that clause is what
- * keeps the shared site-wide area shared between the right pages. Everything there is stored under
- * itemid 0, so ownership of a file can only be read out of the page content that names it — and a
- * page of another context is written by other people: a category's pages are authored by whoever
- * holds local/page:managecategorypages there. Without the clause such an author could paste a
- * reference to a site-wide file into their own page and, because their own page is viewable, make
- * that file servable whatever the state of the site-wide page it really belongs to.
+ * Only rows of the context the file was requested through are searched. Everything in the
+ * site-wide area is stored under itemid 0, so a file's owner can only be read out of the content
+ * that names it; without the clause a category author (local/page:managecategorypages) could paste
+ * a reference to a site-wide file into their own viewable page and make that file servable
+ * whatever the state of the site-wide page it belongs to.
  *
  * @param int $contextid Context id the file was requested through
  * @param string $filepath File path with leading/trailing slashes (e.g. /sub/)
@@ -889,12 +846,10 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
         $filepath = $args ? '/' . implode('/', $args) . '/' : '/';
 
         /*
-         * A category page keeps its files under its own id, in its own context, so the itemid IS
-         * the page id and one row lookup authorises the file — no LIKE search over the content of
-         * every page, which is what the system area needs because everything there shares itemid
-         * 0. Both halves of the WHERE carry weight: without contextid this context would serve a
-         * page belonging to a different category, and without deleted = 0 it would serve the
-         * files of a page that has been deleted.
+         * A category page keeps its files under its own id in its own context, so one row lookup
+         * authorises the file; the system area, all under itemid 0, needs the content search below.
+         * Without contextid this context would serve a page of another category, and without
+         * deleted = 0 the files of a deleted page.
          */
         $iscategoryfile = $context->contextlevel == CONTEXT_COURSECAT;
         if ($iscategoryfile) {
@@ -944,10 +899,9 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
         $itemid = array_shift($args); // Get the item ID for the Open Graph image.
 
         /*
-         * The ogimage itemid is the page id, so the row it belongs to decides whether the image is
-         * published. Without this lookup the area was world-readable by itemid: the image of a
-         * draft, archived, expired or deleted page was served to anyone who guessed the number.
-         * The gate is publication state only, never accesslevel or onlyloggedin — see
+         * The ogimage itemid is the page id, so the row decides whether the image is published;
+         * without it the image of a draft, archived, expired or deleted page would be served to
+         * anyone who guessed the id. The gate is publication state only; see
          * local_page_ogimage_is_servable() for why.
          */
         $ogimagepage = $DB->get_record('local_page', ['id' => (int) $itemid]);
@@ -968,12 +922,11 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
 
         /*
          * The address the head tags hand out carries the file's content hash as one segment before
-         * the name (\local_page\local\ogimage::url()), so a replaced image is a new address and a
+         * the name (\local_page\local\ogimage::url()), so a replaced image gets a new address and a
          * scraper's cached preview of the old one never stands in for it. The segment is a cache
-         * key, not a credential, and is deliberately NOT compared with the file: the gates above
-         * have already decided the image may be served to anybody, and an old address serving the
-         * new image is exactly right. The flat address upstream spelled has no segment and keeps
-         * working; any other segment there is refused rather than silently ignored.
+         * key, not a credential, and is deliberately not compared with the file: the gates above
+         * already allow the image to anybody, and an old address serving the new image is fine.
+         * Upstream's flat address, with no segment, keeps working; any other segment is refused.
          */
         if (count($args) > 1 || ($args && !preg_match('/^[0-9a-f]{40}$/', (string) reset($args)))) {
             return false;

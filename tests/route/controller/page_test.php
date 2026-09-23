@@ -47,7 +47,7 @@ use Psr\Http\Message\ResponseInterface;
 #[CoversClass(page::class)]
 #[CoversClass(request::class)]
 final class page_test extends \core\tests\router\route_testcase {
-    /** @var string The real public predicate; installed on the fleet stacks, absent on the CI matrix. */
+    /** @var string The real public predicate, from local_unlistedcourses; tests adapt or skip where it is absent. */
     private const PREDICATE = '\local_unlistedcourses\category_discoverability';
 
     /**
@@ -124,14 +124,14 @@ final class page_test extends \core\tests\router\route_testcase {
      *
      * A private category's page that exists, a category that does not exist and a public category's
      * slug that names nothing. If any of them answered differently — a 404 for the missing category,
-     * say — an anonymous client could list which categories and which slugs exist, which is the one
-     * thing the guard order is arranged to deny. The public category comes from the real predicate
-     * where local_unlistedcourses is installed; on the CI matrix it is absent, nothing is public, and
-     * the third leg is a second private category, which still has to answer alike.
+     * say — an anonymous client could list which categories and slugs exist; see request::category().
+     * The public category comes from the real predicate where local_unlistedcourses is installed;
+     * where it is absent nothing is public, and the third case is a second private category, which
+     * still has to answer alike.
      *
-     * The comparison is not vacuous: test_a_visitor_reads_a_public_categorys_page is the page a
-     * visitor IS served in the same class, and it fails if the controller answers everybody with
-     * the login page.
+     * A controller that answered everybody with the login page would pass this test; it is caught by
+     * test_a_logged_in_user_reads_a_private_categorys_page, and by
+     * test_a_visitor_reads_a_public_categorys_page where that one runs.
      *
      * @return void
      */
@@ -151,7 +151,7 @@ final class page_test extends \core\tests\router\route_testcase {
                 \local_unlistedcourses\category_discoverability::STATE_PUBLIC,
                 (int) get_admin()->id
             );
-            // Precondition: the third leg really passes the category, and is refused by the lookup.
+            // Precondition: the third case passes the category check, and is refused by the lookup.
             $this->forget_predicate();
             $this->assertTrue(\local_page\local\publicaccess::is_public($public), 'The public category is public.');
         }
@@ -190,9 +190,9 @@ final class page_test extends \core\tests\router\route_testcase {
      * A visitor reads a public category's page at its routed address, with no login required by the route.
      *
      * The category is made public through the real predicate, local_unlistedcourses'
-     * category_discoverability, so this is skipped where that plugin is absent — every CI leg. The
-     * stand-in predicate cannot reach the route: the controller takes no predicate argument, by
-     * design. request_test holds the same decision with the stand-in, on every leg.
+     * category_discoverability, so this is skipped where that plugin is absent. The test double
+     * cannot reach the route, because the controller takes no predicate argument; request_test covers
+     * the same decision with the double.
      *
      * @return void
      */

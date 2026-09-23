@@ -103,7 +103,7 @@ class pages_list implements renderable, templatable {
         $data->archivedpages = $archivedpages;
 
         /*
-         * The address of the editor for a NEW page in this context. A category's button has to
+         * The address of the editor for a new page in this context. A category's button has to
          * carry the category, or it opens the site-wide editor and the author is refused there by
          * a capability they were never meant to hold.
          */

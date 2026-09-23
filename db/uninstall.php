@@ -26,12 +26,10 @@
 /**
  * Cleans up file areas when this plugin is removed.
  *
- * A page's files live in the page's own context, so there is no single area to empty: every
- * context named by a row has to be visited, plus the system context itself — which is where the
- * legacy rows keep their files and where the column's 0 resolves to, and which must be cleaned
- * even when the table holds no rows at all.
+ * A page's files live in the page's own context, so every context named by a row is visited, plus
+ * the system context, where a stored contextid of 0 resolves, even when the table holds no rows.
  *
- * It also removes the plugin's rows from core's shortlink table, which nothing else would: a /p/
+ * It also removes the plugin's rows from core's shortlink table, which core never cleans: a /p/
  * code left behind would point core at a handler that no longer exists.
  *
  * @return bool

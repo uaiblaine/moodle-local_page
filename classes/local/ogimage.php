@@ -31,28 +31,24 @@ namespace local_page\local;
  * page id at filepath '/'. That is the only place local_page_pluginfile() looks, so it is the only
  * place this class looks too: an image the file route would not serve is never advertised.
  *
- * The ADDRESS carries the file's content hash as a directory segment. A messaging app keeps the
- * preview it fetched for as long as it likes, keyed by the image URL; a flat address stays the same
- * when the author replaces the picture, and the old one goes on being shown. With the hash in the
- * path a replaced image is a new address. The segment is a cache key, never a credential: the file
- * route does not compare it with the file (see local_page_pluginfile()).
+ * The address carries the file's content hash as a directory segment, so a replaced image gets a
+ * new URL: link-preview clients cache the preview by image URL, and a flat address would keep
+ * showing the old picture. The segment is a cache key, never a credential: the file route does not
+ * compare it with the file (see local_page_pluginfile()).
  *
- * The SIZE is what lets the tags state og:image:width and og:image:height, which some clients need
- * before they render a large preview. It is read through stored_file::get_imageinfo(), and core
- * already caches that answer by content hash in the application cache core/file_imageinfo
- * (lib/filestorage/file_system.php, get_imageinfo()), so this class keeps no cache of its own. Nor
- * does the save path measure anything: the editor's file manager restricts its accepted types, so
- * core validates the submitted draft area through file_get_all_files_in_draftarea(), which measures
- * every image in it — and the draft file has the stored file's content hash, so the first render
- * after a save finds the size cached. A render after a purge measures again on the spot.
+ * The size lets the tags state og:image:width and og:image:height, which some clients need before
+ * they render a large preview. stored_file::get_imageinfo() already caches it by content hash in the
+ * application cache core/file_imageinfo, so this class keeps no cache of its own. The save path warms
+ * that cache: the file manager's type validation (file_get_all_files_in_draftarea()) measures every
+ * image in the draft area, and the draft file shares the stored file's content hash, so the first
+ * render after a save is a cache hit; only a render after a purge measures again.
  *
- * The CONTENT has to be the picture the name says, which nothing in core checks on the way in: the
- * file manager and the upload repository accept a file by its extension alone, and the file store
- * types it by that extension. An SVG saved as cover.png — markup, able to carry a script — was
- * stored, typed image/png, advertised with the size GD's SVG fallback invents, and served to
- * anybody at the anonymous image address. is_image() is the one answer to "is this our image", and
- * the editor's validation, the file route and file() below all ask it, so a file refused on the way
- * in is also never advertised and never served if it got into the area some other way.
+ * The content has to be the picture the name says, which core does not check on the way in: the
+ * file manager and the upload repository accept a file by its extension, and the file store types it
+ * by that extension, so an SVG (markup that can carry a script) saved as cover.png is stored as
+ * image/png. is_image() is the one answer to "is this our image"; the editor's validation, the file
+ * route and file() all ask it, so a file that got into the area some other way is still never
+ * advertised or served.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -97,10 +93,9 @@ final class ogimage {
      * Two of core's own checks, and both are needed. The name must carry one of the extensions the
      * editor's file manager accepts, which keeps out a genuine SVG — stored_file::is_valid_image()
      * accepts one, SVG being a web image to core. And stored_file::is_valid_image() must pass: the
-     * stored type is a web image, and the type read from the CONTENT is that same type, which is what
+     * stored type is a web image, and the type read from the content is that same type, which is what
      * refuses an SVG, a web page or a text file saved under an image's name. The content is read
-     * through stored_file::get_imageinfo(), which core caches by content hash (core/file_imageinfo),
-     * so asking again for the same file costs a cache hit.
+     * through stored_file::get_imageinfo(), cached by content hash, so asking again costs a cache hit.
      *
      * @param \stored_file $file The file, in the page's image area or in an editor's draft area
      * @return bool
