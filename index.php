@@ -36,140 +36,33 @@ require_once($CFG->dirroot . '/local/page/lib.php'); // Include the library file
 // Retrieve the ID or menuname of the page to be displayed from the URL parameters.
 $pageid = optional_param('id', 0, PARAM_INT);
 $menuname = optional_param('menuname', '', PARAM_ALPHANUMEXT);
+$category = optional_param('category', 0, PARAM_INT);
+$slug = optional_param('page', '', PARAM_ALPHANUMEXT);
 
-// Set up the page context and URL for the current page.
-$context = context_system::instance(); // Get the system context.
-$PAGE->set_context($context); // Set the context for the page.
-
-// Set the URL based on whether we are using menuname or ID.
-if (!empty($menuname)) {
-    $PAGE->set_url(new moodle_url('/' . $menuname)); // Define the URL for the page using menuname.
+/*
+ * Which page this is, whether the viewer may read it, and $PAGE's context and URL are decided by
+ * one request class, in one order, for every address: a visitor asking for a category page is
+ * refused before anything is looked up unless the category is public (see
+ * \local_page\local\request). While the site's router is configured, the category slug form is
+ * answered with a redirect to its routed address, and so is a category page's ?id= address once
+ * the page's rules have let the viewer read it. This script only translates the answer.
+ */
+if ($category > 0) {
+    $request = \local_page\local\request::category($category, $pageid, $slug, legacy: true);
 } else {
-    $PAGE->set_url(new moodle_url('/local/page/index.php', ['id' => $pageid])); // Define the URL for the page using ID.
+    $request = \local_page\local\request::legacy($pageid, $menuname);
+}
+if ($request->redirect !== null) {
+    redirect($request->redirect);
 }
 
-// Load the custom page object using the page ID or menuname.
-if (!empty($menuname)) {
-    // Load by menuname.
-    $custompage = \local_page\custompage::load_by_menuname($menuname);
-} else {
-    // Load by ID.
-    $custompage = \local_page\custompage::load($pageid);
-}
-
-// Check if the custom page has specific access level requirements.
-if (!empty($custompage->accesslevel)) {
-    require_login(); // Ensure the user is logged in if access level is required.
-
-    // Note: Additional capability checks can be added here based on $custompage->accesslevel.
-}
-
-$canview = local_page_user_can_view_page($custompage);
-
-// Set the page layout to use.
-$PAGE->set_pagelayout('base'); // Set the page layout.
-
-// Only expose SEO meta, headings, canonical URL and per-page Additional HTML once access is confirmed.
-$safetitle = get_string('noaccess', 'local_page');
-
-$headseo = '';
-$existinghead = !empty($CFG->additionalhtmlhead) ? $CFG->additionalhtmlhead . "\n" : '';
-if (!$canview) {
-    // Generic document title — do not leak draft/archived/deleted-page metadata via $PAGE / head.
-    $PAGE->set_title($safetitle);
-    $PAGE->set_heading('');
-    $CFG->additionalhtmlhead = $existinghead;
-} else {
-    $PAGE->set_title($custompage->pagename);
-    $statusbadge = $custompage->status;
-
-    $metatags = [
-        'description' => $custompage->metadescription,
-        'keywords' => $custompage->metakeywords,
-        'author' => $custompage->metaauthor,
-        'og:title' => $custompage->metatitle,
-        'robots' => $custompage->metarobots,
-    ];
-
-    foreach ($metatags as $name => $content) {
-        if (!empty($content)) {
-            $headseo .= html_writer::empty_tag('meta', ['name' => $name, 'content' => $content]) . "\n";
-        }
-    }
-
-    $fs = get_file_storage();
-    $files = $fs->get_area_files($context->id, 'local_page', 'ogimage', $custompage->id, 'sortorder', false);
-
-    if ($files) {
-        $file = reset($files);
-        if (!$file->is_directory()) {
-            $imageurl = moodle_url::make_pluginfile_url(
-                $file->get_contextid(),
-                $file->get_component(),
-                $file->get_filearea(),
-                $file->get_itemid(),
-                $file->get_filepath(),
-                $file->get_filename(),
-                false
-            );
-            $headseo .= html_writer::empty_tag('meta', ['property' => 'og:image', 'content' => $imageurl->out(false)]) . "\n";
-        }
-    }
-
-    if (!empty($menuname) && !empty($custompage->menuname)) {
-        $canonicalurl = new moodle_url('/' . $custompage->menuname);
-    } else {
-        $canonicalurl = new moodle_url('/local/page/index.php', ['id' => $custompage->id]);
-    }
-
-    $headseo .= html_writer::empty_tag('meta', ['property' => 'og:site_name', 'content' => $SITE->fullname]) . "\n";
-    $headseo .= html_writer::empty_tag('meta', ['property' => 'og:type', 'content' => 'website']) . "\n";
-    $headseo .= html_writer::empty_tag('meta', ['property' => 'og:title', 'content' => $custompage->pagename]) . "\n";
-    $headseo .= html_writer::empty_tag('meta', ['property' => 'og:url', 'content' => $canonicalurl->out(false)]) . "\n";
-
-    $additionalhead = get_config('local_page', 'additionalhead') ? (string) $custompage->meta : '';
-    $CFG->additionalhtmlhead = $existinghead . $headseo . $additionalhead;
-
-    if ($custompage->hidetitle == 'no') {
-        $PAGE->set_heading($custompage->pagename);
-    }
-
-    if (has_capability('local/page:addpages', $context)) {
-        $PAGE->add_body_class('local-page-status-' . $statusbadge);
-    }
-
-    $bodyid = (int) $custompage->id;
-    if ($bodyid > 0) {
-        if ($pagedata = $DB->get_record('local_page', ['id' => $bodyid, 'deleted' => 0])) {
-            $PAGE->add_body_class('local-page-id-' . $bodyid);
-        }
-    }
-}
-
-$PAGE->set_pagetype('local-page-id-' . max(0, (int) $custompage->id));
-
-// Obtain the renderer for the local_page plugin to output the page content.
-$renderer = $PAGE->get_renderer('local_page');
+/*
+ * The page itself is rendered by the function the routed address renders with, so the two cannot
+ * drift apart: it sets up the layout, the head tags and the body classes, and returns the body.
+ */
+$body = local_page_render_view($request);
 
 // Output the page header, content, and footer.
 echo $OUTPUT->header(); // Display the page header.
-echo $OUTPUT->blocks('side-pre');
-echo $renderer->showpage($custompage); // Render and display the custom page content.
-
-
-
-// Check if the user has the capability to add pages or is a site admin.
-$editpageid = (int) $custompage->id;
-if ($editpageid > 0 && has_capability('local/page:addpages', $context)) {
-    $footerbtn = html_writer::div(
-        html_writer::link(
-            new moodle_url('/local/page/edit.php', ['id' => $editpageid]),
-            '<i class="fa fa-pencil me-2"></i>' . get_string('edit', 'moodle'),
-            ['class' => 'btn btn-primary']
-        ),
-        'local-page-admin-controls mt-3'
-    );
-    echo $footerbtn;
-}
-
+echo $body;
 echo $OUTPUT->footer(); // Display the page footer.

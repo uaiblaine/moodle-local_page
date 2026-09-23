@@ -56,6 +56,9 @@ class page_card implements renderable, templatable {
     /** @var string Menu name */
     protected $menuname;
 
+    /** @var \core\context|null Context the page belongs to; null means the system context. */
+    protected $context;
+
     /**
      * Constructor
      *
@@ -65,14 +68,16 @@ class page_card implements renderable, templatable {
      * @param int $pagedate Page start date
      * @param int $enddate Page end date
      * @param string|null $menuname Menu name
+     * @param \core\context|null $context Context the page belongs to; the system context by default
      */
-    public function __construct($id, $name, $status, $pagedate, $enddate, $menuname = null) {
+    public function __construct($id, $name, $status, $pagedate, $enddate, $menuname = null, ?\core\context $context = null) {
         $this->id = $id;
         $this->name = $name;
         $this->status = $status;
         $this->pagedate = $pagedate;
         $this->enddate = $enddate;
         $this->menuname = $menuname;
+        $this->context = $context;
     }
     /**
      * Export data for template
@@ -82,6 +87,9 @@ class page_card implements renderable, templatable {
      */
     public function export_for_template(renderer_base $output) {
         global $CFG;
+
+        $context = $this->context ?? \core\context\system::instance();
+        $iscategory = $context->contextlevel == CONTEXT_COURSECAT;
 
         $data = new stdClass();
         $data->id = $this->id;
@@ -97,14 +105,28 @@ class page_card implements renderable, templatable {
             $data->cardbodyclass .= ' custompages-card-body--archived';
         }
 
-        // Generate status badge.
+        /*
+         * Generate status badge. The string id is a literal per arm, never
+         * get_string('status_' . $status): a dynamic id is invisible to the lang
+         * tooling, so an unknown status would reach get_string() and raise a
+         * developer notice instead of simply rendering no badge.
+         *
+         * Every bg-* utility is paired with a text utility. Bootstrap 5 defaults
+         * badge text to white, which is unreadable on bg-warning (contrast 1.95
+         * against the 4.5:1 AA floor), so the pairing is not optional.
+         */
         $badgeclasses = [
-            'live' => 'badge badge-sq bg-success',
-            'draft' => 'badge badge-sq bg-warning',
-            'archived' => 'badge badge-sq bg-danger',
+            'live' => 'badge bg-success text-white',
+            'draft' => 'badge bg-warning text-dark',
+            'archived' => 'badge bg-danger text-white',
         ];
-        if (isset($badgeclasses[$this->status])) {
-            $statusstring = get_string('status_' . $this->status, 'local_page');
+        $statusstring = match ($this->status) {
+            'live' => get_string('status_live', 'local_page'),
+            'draft' => get_string('status_draft', 'local_page'),
+            'archived' => get_string('status_archived', 'local_page'),
+            default => '',
+        };
+        if ($statusstring !== '' && isset($badgeclasses[$this->status])) {
             $data->statusbadge = \html_writer::tag('span', $statusstring, ['class' => $badgeclasses[$this->status]]);
         } else {
             $data->statusbadge = '';
@@ -124,15 +146,38 @@ class page_card implements renderable, templatable {
         $data->editurl = new moodle_url($CFG->wwwroot . '/local/page/edit.php', ['id' => $this->id]);
         $data->pageurl = $CFG->wwwroot . '/local/page/?id=' . $this->id;
         $data->viewurl = new moodle_url($CFG->wwwroot . '/local/page/', ['id' => $this->id]);
-        $data->deleteurl = new moodle_url(
-            '/local/page/pages.php',
-            ['pagedel' => $this->id, 'sesskey' => \sesskey()]
-        );
+        $deleteparams = ['pagedel' => $this->id, 'sesskey' => \sesskey()];
+        if ($iscategory) {
+            /*
+             * The delete action resolves its context from this parameter, checks the capability
+             * there and then refuses a row that does not belong to it. Without the parameter the
+             * link asks the site-wide screen to delete a category's page, and that is refused
+             * twice over — by the capability for a category manager, and by the row comparison
+             * even for an administrator.
+             */
+            $deleteparams['contextid'] = (int) $context->id;
+        }
+        $data->deleteurl = new moodle_url('/local/page/pages.php', $deleteparams);
 
-        // Add friendly URL if menuname exists.
-        if ($this->menuname) {
+        /*
+         * Add friendly URL if menuname exists. A category page never gets the site-wide form:
+         * wwwroot/<slug> is answered by the web server rewrite for site pages only, and printing it
+         * here would advertise an address that serves somebody else's page. Its friendly URL is its
+         * canonical address instead — the route while the router is configured, the script's
+         * ?category=&page= form otherwise — and, once one was minted at save, its public short
+         * address to share. Reading the code is all a listing does: a GET never mints one.
+         */
+        if ($this->menuname && !$iscategory) {
             $data->menuname = $this->menuname;
             $data->friendlyurl = $CFG->wwwroot . '/' . $this->menuname;
+        } else if ($this->menuname && $iscategory) {
+            $row = (object) ['id' => (int) $this->id, 'menuname' => $this->menuname, 'contextid' => (int) $context->id];
+            $data->menuname = $this->menuname;
+            $data->friendlyurl = \local_page\local\links::page($row)->out(false);
+            $shareurl = \local_page\local\links::existing_share((int) $this->id);
+            if ($shareurl !== null) {
+                $data->shareurl = $shareurl->out(false);
+            }
         }
 
         return $data;

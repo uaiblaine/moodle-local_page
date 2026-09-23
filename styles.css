@@ -7,7 +7,7 @@
 
 /* Base styles for custom page cards */
 .custompages-card-body {
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--bs-border-color, #dee2e6);
     border-bottom-width: 3px;
     /* Emphasized bottom border */
     padding: 16px;
@@ -27,7 +27,7 @@
     border-width: 2px;
     /* Consistent border width */
     border-style: dashed;
-    border-color: #e0e0e0;
+    border-color: var(--bs-border-color, #dee2e6);
     /* Ensure border color consistency */
     opacity: 0.7;
 }
@@ -37,10 +37,16 @@
     /* Increase visibility on hover */
 }
 
-/* Dark theme adjustments for card borders */
-/* Note: This rule might be redundant if the base dark theme border color is already #e0e0e0 */
-.theme-dark .custompages-card-body {
-    border-color: #e0e0e0;
+/*
+ * Dark theme adjustments for card borders. Moodle 5.2 emits exactly ONE dark
+ * mechanism - :root[data-bs-theme="dark"], which re-points the --bs-* tokens.
+ * Nothing on 5.2 ever writes .theme-dark, so the rule this replaced was dead.
+ * The card outline is deliberately lifted off --bs-border-color here:
+ * --bs-secondary-color is a light grey under the dark palette, which keeps the
+ * card edge visible against the dark surface the way the light theme does.
+ */
+:root[data-bs-theme="dark"] .custompages-card-body {
+    border-color: var(--bs-secondary-color, #adb5bd);
 }
 
 /* Styles for the title within a card */
@@ -61,10 +67,14 @@
 .custompages-btn-group .btn {
     flex-grow: 1;
     /* Allow buttons to grow */
-    /* display: block; width: 100%; might be too restrictive depending on desired layout */
 }
 
-/* Common styles for page status badges (applied via ::before on heading) */
+/*
+ * Common styles for page status badges (applied via ::before on heading).
+ * Each status pairs a -bg-subtle background with its -text-emphasis colour:
+ * Bootstrap defines both halves per theme, so one declaration is legible in
+ * light and dark alike and no second palette has to be maintained.
+ */
 .local-page-status-draft h1.page-header-headings::before,
 .local-page-status-live h1.page-header-headings::before,
 .local-page-status-archived h1.page-header-headings::before {
@@ -75,8 +85,7 @@
     border-radius: 4px;
     font-size: 12px;
     font-weight: bold;
-    color: #515151;
-    /* Consider using theme text color variables */
+    color: var(--bs-emphasis-color, #515151);
     position: absolute;
     /* Position relative to the heading's container */
     top: -40px;
@@ -87,22 +96,22 @@
 /* Specific styles for 'Live' status badge */
 .local-page-status-live h1.page-header-headings::before {
     content: "Live";
-    background-color: #bfe7bf;
-    /* Consider theme success color */
+    background-color: var(--bs-success-bg-subtle, #bfe7bf);
+    color: var(--bs-success-text-emphasis, #515151);
 }
 
 /* Specific styles for 'Draft' status badge */
 .local-page-status-draft h1.page-header-headings::before {
     content: "Draft";
-    background-color: moccasin;
-    /* Consider theme warning/info color */
+    background-color: var(--bs-warning-bg-subtle, moccasin);
+    color: var(--bs-warning-text-emphasis, #515151);
 }
 
 /* Specific styles for 'Archived' status badge */
 .local-page-status-archived h1.page-header-headings::before {
     content: "Archived";
-    background-color: #e7baba;
-    /* Consider theme muted/error color */
+    background-color: var(--bs-danger-bg-subtle, #e7baba);
+    color: var(--bs-danger-text-emphasis, #515151);
 }
 
 /* Styles for the small label above the URL */
@@ -112,8 +121,7 @@
     font-size: 11px;
     padding: 2px 6px;
     margin: 0;
-    background-color: #f0f0f0;
-    /* Consider theme UI background color */
+    background-color: var(--bs-secondary-bg, #f0f0f0);
     border-radius: 4px 4px 0 0;
     /* Rounded top corners */
 }
@@ -123,9 +131,8 @@
     display: block;
     /* Ensure it takes its own line */
     font-size: 12px;
-    color: #888;
-    /* Consider theme muted text color */
-    background-color: #f0f0f0;
+    color: var(--bs-secondary-color, #6c757d);
+    background-color: var(--bs-secondary-bg, #f0f0f0);
     /* Match the label background */
     padding: 5px;
     border-radius: 0 4px 4px 4px;
@@ -138,13 +145,16 @@
     /* Ensure breaks even without spaces */
 }
 
-/* Dark theme adjustments for badge label and URL background */
-.theme-dark .custompages-title-badge-label,
-.theme-dark .custompage-url {
-    background-color: #2b2c31;
-    /* Consider dark theme UI background variable */
-    color: #ccc;
-    /* Adjust text color for dark background if needed */
+/*
+ * Dark theme adjustments for badge label and URL background. --bs-tertiary-bg
+ * is #2b3035 under the dark palette, which is the surface the hard-coded
+ * #2b2c31 here was reaching for; the fallbacks only apply on a theme that
+ * ships no --bs-* tokens at all.
+ */
+:root[data-bs-theme="dark"] .custompages-title-badge-label,
+:root[data-bs-theme="dark"] .custompage-url {
+    background-color: var(--bs-tertiary-bg, #2b2c31);
+    color: var(--bs-secondary-color, #ccc);
 }
 
 /* Styles for a potentially sticky footer element */

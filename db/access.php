@@ -47,4 +47,48 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+
+    /*
+     * Author the pages that belong to one course category. Its own capability rather than
+     * addpages checked at a lower context: a site delegating "write the pages of this
+     * programme" is not handing over the site-wide pages, and the two are held by different
+     * people. RISK_SPAM because the page carries author-written text; captype write because
+     * authoring is a write, which also means a guest or an anonymous visitor can never hold it
+     * (lib/accesslib.php:481-485).
+     *
+     * Deliberately WITHOUT clonepermissionsfrom, following the precedent in
+     * local_unlistedcourses/db/access.php: no upgrade may back-fill a category authoring right
+     * from moodle/category:manage or from local/page:addpages. A site that wants both grants
+     * both.
+     */
+    'local/page:managecategorypages' => [
+        'riskbitmask' => RISK_SPAM,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSECAT,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+
+    /*
+     * Publish a category page to visitors who are not logged in. Split from the authoring
+     * capability above for the reason the course side splits publish from update: writing a
+     * page is an editing act, putting it in front of the open web is not, and folding the
+     * second into the first would grant the larger power silently.
+     *
+     * DECLARED HERE, ENFORCED IN STAGE 3. Nothing reads it yet: this stage only gives pages a
+     * context. It is declared now so that the capability exists — with its strings, its
+     * archetype and its risk — before the gate that consults it arrives, rather than appearing
+     * in the same upgrade that starts refusing things.
+     *
+     * Also deliberately WITHOUT clonepermissionsfrom, for the same reason as above.
+     */
+    'local/page:publishcategorypages' => [
+        'riskbitmask' => RISK_SPAM,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSECAT,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
 ];

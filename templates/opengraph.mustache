@@ -1,0 +1,69 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_page/opengraph
+
+    The Open Graph tags of a custom page - what a messaging app or social
+    network reads when a link to the page is shared. Rendered into the document
+    head by the before_standard_head_html_generation hook callback, which writes
+    the name metas (description, keywords, author, robots) and the canonical
+    link beside them as literal strings: the template lint validates a fragment
+    as body content, where a meta carrying a name and a canonical link are
+    invalid while RDFa property metas are not.
+
+    Every value arrives in the PLAIN spelling and the double stashes escape it
+    exactly once for the attribute. There is one title: the page's meta title,
+    or its name when it has none. The description is optional: a page without
+    a meta description gets no description tag at all. The image is optional
+    too: it is served only for a published page, its address carries the
+    file's content hash so that a replaced image is a new address, its alt text
+    is the title, and its width and height are stated only when the file could
+    be measured.
+
+    Example context (json):
+    {
+        "title": "Fire & Rescue handbook",
+        "hasdescription": true,
+        "description": "Everything a new volunteer needs before the first shift.",
+        "url": "https://moodle.example.org/local_page/category/7/handbook",
+        "sitename": "Example Academy",
+        "locale": "pt_BR",
+        "hasimage": true,
+        "imageurl": "https://moodle.example.org/pluginfile.php/42/local_page/ogimage/5/da39a3ee5e6b4b0d3255bfef95601890afd80709/cover.png",
+        "imagetype": "image/png",
+        "hasimagesize": true,
+        "imagewidth": 1200,
+        "imageheight": 630
+    }
+}}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{title}}">
+{{#hasdescription}}
+<meta property="og:description" content="{{description}}">
+{{/hasdescription}}
+<meta property="og:url" content="{{url}}">
+<meta property="og:site_name" content="{{sitename}}">
+<meta property="og:locale" content="{{locale}}">
+{{#hasimage}}
+<meta property="og:image" content="{{imageurl}}">
+<meta property="og:image:type" content="{{imagetype}}">
+<meta property="og:image:alt" content="{{title}}">
+{{#hasimagesize}}
+<meta property="og:image:width" content="{{imagewidth}}">
+<meta property="og:image:height" content="{{imageheight}}">
+{{/hasimagesize}}
+{{/hasimage}}

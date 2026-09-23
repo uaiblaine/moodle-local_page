@@ -47,15 +47,50 @@ class pages_edit_product_form extends moodleform {
     public $callingpage;
 
     /**
+     * @var \core\context The context this page belongs to; the system context for a site-wide page.
+     */
+    protected $pagecontext;
+
+    /**
      * Constructor for the pages_edit_product_form class.
      *
+     * The context has to be known before parent::__construct() runs, because that is what calls
+     * definition(), and definition() builds the editor and the file manager against it.
+     *
      * @param mixed $page The page data to be edited.
+     * @param \core\context|null $context The context the page belongs to; system when omitted.
      */
-    public function __construct($page) {
+    public function __construct($page, ?\core\context $context = null) {
         if ($page) {
             $this->callingpage = $page->id;
         }
-        parent::__construct(); // Call the parent constructor.
+        $this->pagecontext = $context ?? context_system::instance();
+
+        /*
+         * The action is named rather than left to moodleform's default, and the reason is the whole
+         * round trip. With no action given, moodleform posts to strip_querystring($FULLME)
+         * (lib/formslib.php:199) — the query string is thrown away — so a category page posted back
+         * to a bare edit.php, which resolves the SYSTEM context from a URL carrying nothing, and
+         * refused the author on local/page:addpages before the save path ever read the hidden
+         * contextid. Naming the address keeps the context across the POST. For a new site-wide page
+         * it is the same bare edit.php upstream posted to.
+         */
+        parent::__construct(local_page_edit_url($this->pagecontext, (int) $this->callingpage));
+    }
+
+    /**
+     * The itemid this page's embedded files are stored under.
+     *
+     * A site-wide page shares one area at itemid 0, which is what every stored URL of every page
+     * written before this stage names. A category page uses its own id, so that the file route can
+     * authorise a file from the row it belongs to. A category page that has not been saved yet has
+     * no id: its files are moved into place right after the insert (see renderer::save_page()).
+     *
+     * @param int $pageid Page id, or 0 for a page that does not exist yet.
+     * @return int
+     */
+    protected function pagecontent_itemid(int $pageid): int {
+        return $this->pagecontext->contextlevel == CONTEXT_COURSECAT ? $pageid : 0;
     }
 
     /**
@@ -65,7 +100,7 @@ class pages_edit_product_form extends moodleform {
      * @return mixed The result of the parent set_data method.
      */
     public function set_data($defaults) {
-        $context = context_system::instance(); // Get the system context.
+        $context = $this->pagecontext; // The context this page belongs to.
         $draftideditor = file_get_submitted_draft_itemid('pagecontent'); // Get the draft item ID for the editor.
 
         // Prepare the draft area for the page content.
@@ -74,7 +109,7 @@ class pages_edit_product_form extends moodleform {
             $context->id,
             'local_page',
             'pagecontent',
-            0,
+            $this->pagecontent_itemid((int) ($defaults->id ?? 0)),
             ['subdirs' => true],
             $defaults->pagecontent['text']
         );
@@ -167,6 +202,28 @@ class pages_edit_product_form extends moodleform {
         $mform->setType('onlyloggedin', PARAM_INT); // Set the type for the nonloggedin field.
         $mform->addHelpButton('onlyloggedin', 'onlyloggedin_description', 'local_page'); // Add help button.
 
+        /*
+         * Publishing a category page to visitors who are not logged in needs a capability of its
+         * own. An editor without it sees the field frozen at "Yes" and a line saying why, rather
+         * than a control that appears to work and is silently overridden on save — the save path
+         * applies local_page_apply_publish_gate() whatever is posted, which is what actually
+         * enforces this. A site-wide page is untouched: it is governed by local/page:addpages.
+         */
+        if (
+            $this->pagecontext->contextlevel == CONTEXT_COURSECAT
+            && !has_capability('local/page:publishcategorypages', $this->pagecontext)
+        ) {
+            $mform->setDefault('onlyloggedin', '1');
+            $mform->setConstant('onlyloggedin', '1');
+            $mform->hardFreeze('onlyloggedin');
+            $mform->addElement(
+                'static',
+                'onlyloggedin_publishlocked',
+                '',
+                get_string('onlyloggedin_publishlocked', 'local_page')
+            );
+        }
+
         // Text area for the page name.
         $mform->addElement(
             'textarea',
@@ -223,8 +280,24 @@ class pages_edit_product_form extends moodleform {
         $mform->addElement('header', 'htmlbody', get_string('page', 'moodle'));
 
         // Editor for page content.
-        $context = context_system::instance(); // Get the system context.
-        $editoroptions = ['maxfiles' => EDITOR_UNLIMITED_FILES, 'noclean' => true, 'context' => $context];
+        $context = $this->pagecontext; // The context this page belongs to.
+        $editoroptions = ['maxfiles' => EDITOR_UNLIMITED_FILES, 'context' => $context];
+        if ($context->contextlevel == CONTEXT_COURSECAT) {
+            /*
+             * A category page declares trusttext instead of noclean. What lib/form/editor.php does
+             * with the option is accept it into the element's own option list (:59); the code that
+             * READS it is core's file_prepare_standard_editor() / file_postupdate_standard_editor()
+             * (filelib.php:154,225), which this plugin does not use — it prepares and saves the
+             * draft area itself. So the declaration cleans nothing on its own: the pre-edit
+             * cleaning is local_page_editable_content() and the flag is captured by
+             * local_page_content_trust(). What the element does for every editor, whatever is
+             * passed, is set its own 'trusted' option from trusttext_trusted($context) (:98).
+             */
+            $editoroptions['trusttext'] = true;
+        } else {
+            // A site-wide page keeps upstream's editor exactly: local/page:addpages is RISK_XSS.
+            $editoroptions['noclean'] = true;
+        }
 
         $mform->addElement(
             'editor',
@@ -278,7 +351,14 @@ class pages_edit_product_form extends moodleform {
         $mform->addElement('text', 'metarobots', get_string('metarobots', 'local_page'));
         $mform->setType('metarobots', PARAM_TEXT); // Set the type for meta robots.
         $mform->addHelpButton('metarobots', 'metarobots_description', 'local_page'); // Add help button.
-        if (get_config('local_page', 'additionalhead')) {
+        /*
+         * The head field is offered only on a site-wide page. Every other field a page stores is
+         * body HTML, which clean_text() can judge; a <head> fragment can carry a script element, a
+         * meta refresh or a base tag, and no sanitiser is written for that — so the field stays
+         * with the people who hold local/page:addpages, and a category author is not offered it.
+         * The save path applies the same two conditions.
+         */
+        if (get_config('local_page', 'additionalhead') && $this->pagecontext->contextlevel == CONTEXT_SYSTEM) {
             // Text area for additional HTML head content.
             $mform->addElement('textarea', 'meta', get_string('edit_head', 'local_page'));
             $mform->setType('meta', PARAM_RAW); // Set the type for meta content.
@@ -294,5 +374,118 @@ class pages_edit_product_form extends moodleform {
         // Hidden field for page ID.
         $mform->addElement('hidden', 'id', null);
         $mform->setType('id', PARAM_INT); // Set the type for the ID field.
+
+        /*
+         * Hidden transport for the context a NEW page is being created in, carrying the stored
+         * convention where 0 means the system context. It is re-checked on the way back in by
+         * local_page_require_editable_page(), and for a page that already exists it is discarded
+         * in favour of the stored row's context — a posted value may not move a page.
+         */
+        $mform->addElement('hidden', 'contextid', \local_page\local\scope::stored_contextid($this->pagecontext));
+        $mform->setType('contextid', PARAM_INT);
+    }
+
+    /**
+     * Server-side validation for the fields whose stored value is a rule rather than text.
+     *
+     * Two of this form's fields are read back as instructions rather than displayed, and neither
+     * had any validation at all: a typo in "Required capability" was stored happily and changed who
+     * could see the page, and a friendly URL could be typed over another page's.
+     *
+     * The access level is parsed exactly the way local_page_user_can_view_page() parses it, so that
+     * what is refused here is what would have been evaluated there. The read side is deliberately
+     * left alone: it must keep answering for rows saved before this form existed.
+     *
+     * The friendly URL is refused on two counts: a name Moodle itself answers on, and a name
+     * another live page of the same context already holds. Only the second one is scoped — see
+     * \local_page\local\slug::is_reserved() for why stored rows are never renamed to match.
+     *
+     * The Open Graph image is refused unless its content is the picture its name says. The file
+     * manager accepts a file by its extension alone, and this one is served to anybody.
+     *
+     * @param array $data Submitted values, "fieldname" => value
+     * @param array $files Uploaded files, unused here
+     * @return array Errors keyed by element name, empty when everything is acceptable
+     */
+    public function validation($data, $files) {
+        global $USER;
+
+        $errors = parent::validation($data, $files);
+
+        $accesslevel = trim((string) ($data['accesslevel'] ?? ''));
+        if ($accesslevel !== '') {
+            $unknown = null;
+            $positives = 0;
+            $entries = 0;
+
+            foreach (explode(',', $accesslevel) as $entry) {
+                $entry = trim($entry);
+                if ($entry === '') {
+                    continue;
+                }
+                $entries++;
+
+                $negated = substr($entry, 0, 1) === '!';
+                $capability = trim($negated ? substr($entry, 1) : $entry);
+                if (!$negated) {
+                    $positives++;
+                }
+
+                if ($unknown === null && ($capability === '' || get_capability_info($capability) === null)) {
+                    $unknown = $entry;
+                }
+            }
+
+            if ($unknown !== null) {
+                $errors['accesslevel'] = get_string('accesslevel_unknowncapability', 'local_page', $unknown);
+            } else if ($entries > 0 && $positives === 0) {
+                /*
+                 * A list of negations only grants the page to everyone. The predicate starts at
+                 * "no access" and a negated entry flips that to "access" for anyone who does NOT
+                 * hold the capability — which is every anonymous visitor, since administrators were
+                 * already admitted further up. Refusing it here is what closes that hole; the
+                 * predicate keeps reading already-stored rows as it always did.
+                 */
+                $errors['accesslevel'] = get_string('accesslevel_negationonly', 'local_page');
+            }
+        }
+
+        /*
+         * Compared lower-cased and trimmed because that is the form the renderer stores. The
+         * context decides both refusals: a slug is reserved site-wide, but it is only "taken"
+         * within the scope that owns it, so two categories may each have a "contato".
+         */
+        $menuname = \core_text::strtolower(trim((string) ($data['menuname'] ?? '')));
+        $contextid = (int) ($data['contextid'] ?? 0);
+        if ($menuname !== '' && \local_page\local\slug::is_reserved($menuname)) {
+            $errors['menuname'] = get_string('menuname_reserved', 'local_page');
+        } else if ($menuname !== '' && \local_page\local\slug::is_taken($menuname, (int) ($data['id'] ?? 0), $contextid)) {
+            $errors['menuname'] = get_string('menuname_taken', 'local_page');
+        }
+
+        /*
+         * The image goes out to anybody at an address a scraper fetches, so a file whose content is
+         * not the raster its name says — an SVG saved as cover.png — is refused here rather than
+         * stored. The draft area is the submitting user's, which is where the file manager put it.
+         */
+        $ogdraftitemid = (int) ($data['ogimage_filemanager'] ?? 0);
+        if ($ogdraftitemid > 0) {
+            $ogdraftfiles = get_file_storage()->get_area_files(
+                \core\context\user::instance((int) $USER->id)->id,
+                'user',
+                'draft',
+                $ogdraftitemid,
+                'id',
+                false
+            );
+            foreach ($ogdraftfiles as $ogdraftfile) {
+                if (!\local_page\local\ogimage::is_image($ogdraftfile)) {
+                    $errors['ogimage_filemanager'] = get_string('edit_ogimage_notimage', 'local_page');
+                    break;
+                }
+            }
+        }
+
+        return $errors;
     }
 }
