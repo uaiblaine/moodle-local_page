@@ -216,9 +216,11 @@ the site-wide pages, which keep upstream's trusted rendering and their `<head>` 
   friendly URLs are unique. What does change is its head: the Open Graph tags are rebuilt for every
   page (see *Sharing a page*), and the plugin no longer appends them to the site's
   `$CFG->additionalhtmlhead`.
-- **That uniqueness rewrites stored friendly URLs once**, in step 2026092202: every slug is trimmed,
+- **That uniqueness rewrites stored friendly URLs**, in step 2026092202 and again in step 2026092210,
+  which changes nothing on a site the first pass left without duplicates: every slug is trimmed,
   lower-cased and cut to the column width, an empty one becomes `page-<id>`, a duplicate keeps its
-  address on the lowest id and gains `-<id>` elsewhere, and a deleted page's becomes
+  address on the lowest id and moves elsewhere to the first of `-<id>`, `-<id>-2`, `-<id>-3` that no
+  other page of its category (or of the site) holds, and a deleted page's becomes
   `<slug>-deleted-<id>`. On a site that already runs upstream's plugin, list the live slugs on the copy
   before and after the upgrade; every line that changed is a published address that changed.
   ```sh
@@ -227,6 +229,11 @@ the site-wide pages, which keep upstream's trusted rendering and their `<head>` 
       echo $page->id, " ", $page->menuname, "\n";
   }'
   ```
+- **Step 2026092209 makes `hidetitle` NOT NULL** on a site that came through upstream's plugin, whose
+  own step added the column as nullable although `db/install.xml` declares it NOT NULL with the default
+  `no`. An empty value becomes `no`, the declared default and what the editor already showed for such
+  a page; the viewer, which shows the title only for `no`, had been hiding it and shows it from then
+  on. `php admin/cli/check_database_schema.php` stops reporting the column.
 - **Releases 1.0.10+uai.5 to uai.9 add no table and no column, and still need the upgrade.** Their
   version bump is what makes Moodle register what they add: the category menu node and the two
   category deletion callbacks in `lib.php`, and the Open Graph hook in `db/hooks.php`. Until the
@@ -259,7 +266,7 @@ php admin/cli/upgrade.php --is-pending; echo "exit $?"
 ```
 
 Expected: `No upgrade needed ...` and `exit 0`, and *Site administration > Plugins > Plugins overview*
-lists `local_page` at version `2026092208`. Exit code `2` means the upgrade has not run, and nothing the
+lists `local_page` at version `2026092210`. Exit code `2` means the upgrade has not run, and nothing the
 series registers (hook, menu node, callbacks) is active yet.
 
 **3 and 4. Who holds the category capabilities, and who holds trusted content.** Assign the roles as

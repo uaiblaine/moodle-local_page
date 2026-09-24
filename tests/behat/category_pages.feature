@@ -53,3 +53,12 @@ Feature: Authoring the custom pages that belong to a course category
     # puts a "Category" link in a category page's secondary navigation whatever the viewer holds.
     Then "Category" "link" should exist in the ".secondary-navigation" "css_element"
     And "Custom pages" "link" should not exist in current page administration
+
+  Scenario: A visitor opening the editor meets the login page whether or not the category exists
+    # The two answers must be the same: an error for a category id that does not exist beside the
+    # login page for one that does would tell a visitor which ids exist.
+    When I visit "/local/page/edit.php?category=999999"
+    Then "Username" "field" should exist
+    When I visit the editor of a new page of the category "CAT1"
+    Then "Username" "field" should exist
+    And I should not see "Title of the Page"

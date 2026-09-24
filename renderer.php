@@ -343,10 +343,17 @@ class local_page_renderer extends plugin_renderer_base {
 
                 /*
                  * A page saved with no slug would be reachable only by id, so it is named
-                 * page-<id> now, the name slug::normalise_all() gives such a row at upgrade.
+                 * page-<id> now, the name slug::normalise_all() gives such a row at upgrade. An
+                 * author may already have typed that name into another live page of the context,
+                 * so it goes through the same uniqueness rule as every other slug.
                  */
                 if ($result && $result > 0 && $recordpage->menuname === '') {
-                    $DB->set_field('local_page', 'menuname', 'page-' . (int) $result, ['id' => (int) $result]);
+                    $autoslug = \local_page\local\slug::unique_in_context(
+                        'page-' . (int) $result,
+                        (int) $result,
+                        (int) $recordpage->contextid
+                    );
+                    $DB->set_field('local_page', 'menuname', $autoslug, ['id' => (int) $result]);
                 }
             } finally {
                 $lock->release();

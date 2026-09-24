@@ -34,6 +34,15 @@ $pageid = optional_param('id', 0, PARAM_INT); // Get page ID parameter.
 $categoryid = optional_param('category', 0, PARAM_INT); // Course category, for a new category page.
 
 /*
+ * The login check comes before any page or category is looked up: an anonymous request for a
+ * category that does not exist would otherwise die on the lookup below while one that exists meets
+ * the login page, which tells a visitor which category ids exist. Called with no course,
+ * require_login() sets no course and no context on $PAGE for a request it lets through, so
+ * set_category_by_id() below is still the first set_*() call.
+ */
+require_login(); // Ensure the user is logged in.
+
+/*
  * Which context this edit is in. For an existing page the stored row decides, whatever the URL
  * says; for a new page the ?category= parameter does. The row is read here only to answer that
  * question — the authoritative check is local_page_require_editable_page() below, which reads it
@@ -69,9 +78,6 @@ $PAGE->set_url(new moodle_url('/local/page/edit.php', $editurlparams)); // Set t
 $PAGE->set_pagelayout('standard'); // Set the page layout to standard.
 $PAGE->set_title(get_string('pagesetup_title', 'local_page')); // Set the page title.
 $PAGE->set_heading(get_string('pluginname', 'local_page')); // Set the page heading.
-
-// Force the user to login and check capabilities.
-require_login(); // Ensure the user is logged in.
 
 // Get the renderer for this page.
 $renderer = $PAGE->get_renderer('local_page'); // Get the renderer for the local_page plugin.

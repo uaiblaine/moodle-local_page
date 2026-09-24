@@ -74,7 +74,7 @@ final class save_page_test extends \advanced_testcase {
      * @param int $pageid Existing page id, or 0 for a new page
      * @param string $menuname Friendly URL to submit
      * @param array $extra Further fields to submit
-     * @return int The saved page's id
+     * @return int The saved page's id; with an empty $menuname, the newest page's
      */
     private function save(\core\context $context, int $pageid, string $menuname, array $extra = []): int {
         global $CFG, $DB, $PAGE;
@@ -113,6 +113,11 @@ final class save_page_test extends \advanced_testcase {
             $this->assertSame('redirecterrordetected', $exception->errorcode, $exception->getMessage());
         }
 
+        if ($menuname === '') {
+            // The save named the page itself, so it is found as the row it inserted.
+            return (int) $DB->get_field_sql('SELECT MAX(id) FROM {local_page}');
+        }
+
         $params = ['menuname' => $menuname, 'contextid' => \local_page\local\scope::stored_contextid($context)];
         return (int) $DB->get_field('local_page', 'id', $params, MUST_EXIST);
     }
@@ -137,6 +142,41 @@ final class save_page_test extends \advanced_testcase {
         $this->assertSame($pageid, $this->save($context, $pageid, 'handbook'), 'The second save edits the same page.');
         $this->assertSame($code, links::existing_code($pageid), 'The same code after the second save.');
         $this->assertSame(1, $DB->count_records('shortlink', ['component' => links::COMPONENT, 'identifier' => (string) $pageid]));
+    }
+
+    /**
+     * A page saved with no slug is named page-<id>, and page-<id>-2 when a page of its context holds that name.
+     *
+     * Nothing stops an author typing page-<id> into another page before a new page gets that id, so
+     * the name the save gives goes through the same uniqueness rule as a typed one. The first save is
+     * the control: with nobody holding the name the page gets page-<id> itself. The blocker is then
+     * named after the id the next page will get, one above its own, and the save is asserted to have
+     * got exactly that id, so the suffix is the rule at work and not a different id.
+     *
+     * @return void
+     */
+    public function test_a_page_saved_without_a_slug_gets_a_name_no_other_page_holds(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $this->set_router(false);
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $context = \core\context\coursecat::instance($category);
+        $slug = static fn (int $pageid): string => (string) $DB->get_field('local_page', 'menuname', ['id' => $pageid]);
+
+        $plain = $this->save($context, 0, '');
+        $this->assertSame("page-{$plain}", $slug($plain));
+
+        $generator = $this->getDataGenerator()->get_plugin_generator('local_page');
+        $blocker = (int) $generator->create_category_page($category, ['menuname' => 'blocker'])->id;
+        $nextid = $blocker + 1;
+        $DB->set_field('local_page', 'menuname', "page-{$nextid}", ['id' => $blocker]);
+
+        $named = $this->save($context, 0, '');
+        $this->assertSame($nextid, $named, 'Precondition: the save got the id the blocker is named after.');
+        $this->assertSame("page-{$named}-2", $slug($named));
+        $this->assertSame("page-{$named}", $slug($blocker), 'The page that held the name keeps it.');
     }
 
     /**

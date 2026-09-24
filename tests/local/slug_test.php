@@ -408,6 +408,102 @@ final class slug_test extends \advanced_testcase {
     }
 
     /**
+     * A moved page never lands on a slug another live page of its context holds, and a second run changes nothing.
+     *
+     * The lowest id holds x-<third>, which is exactly the form the third page moves to when it loses
+     * x to the second one. The form is taken, so the third page goes on to x-<third>-2. Handing it
+     * x-<third> would leave two live pages on one address, and a second run would keep them there,
+     * because a slug that already ends in the page's id is the form that page would move to.
+     *
+     * @return void
+     */
+    public function test_normalise_all_never_moves_a_page_onto_a_slug_already_held(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $first = (int) $this->pages()->create_category_page($category, ['menuname' => 'placeholder'])->id;
+        $second = (int) $this->pages()->create_category_page($category, ['menuname' => 'x'])->id;
+        $third = (int) $this->pages()->create_category_page($category, ['menuname' => 'x'])->id;
+        $DB->set_field('local_page', 'menuname', "x-{$third}", ['id' => $first]);
+
+        // Only the third page moves.
+        $this->assertSame(1, slug::normalise_all());
+
+        $this->assertSame("x-{$third}", $this->stored_slug($first));
+        $this->assertSame('x', $this->stored_slug($second));
+        $this->assertSame("x-{$third}-2", $this->stored_slug($third));
+
+        // The run is idempotent for real: the second one writes nothing and the table is unchanged.
+        $after = $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname');
+        $this->assertCount(3, array_unique($after), 'Three live pages, three addresses.');
+        $this->assertSame(0, slug::normalise_all());
+        $this->assertSame($after, $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname'));
+    }
+
+    /**
+     * A page that has to move skips every form a later page of its context holds, and counts on.
+     *
+     * The later pages hold x-<second> and x-<second>-2, the first two forms the second page could
+     * move to, so it ends on x-<second>-3 and both keep the slugs they were already serving. A
+     * site-wide page holding x-<second>-3 is the control that the forms are compared within the
+     * context only: were it counted, the second page would have gone on to -4.
+     *
+     * @return void
+     */
+    public function test_normalise_all_skips_forms_a_later_page_holds_and_counts_on(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $first = (int) $this->pages()->create_category_page($category, ['menuname' => 'x'])->id;
+        $second = (int) $this->pages()->create_category_page($category, ['menuname' => 'x'])->id;
+        $third = (int) $this->pages()->create_category_page($category, ['menuname' => "x-{$second}"])->id;
+        $fourth = (int) $this->pages()->create_category_page($category, ['menuname' => "x-{$second}-2"])->id;
+        $sitewide = (int) $this->pages()->create_page(['menuname' => "x-{$second}-3"])->id;
+
+        $this->assertSame(1, slug::normalise_all());
+
+        $this->assertSame('x', $this->stored_slug($first));
+        $this->assertSame("x-{$second}-3", $this->stored_slug($second));
+        $this->assertSame("x-{$second}", $this->stored_slug($third));
+        $this->assertSame("x-{$second}-2", $this->stored_slug($fourth));
+        $this->assertSame("x-{$second}-3", $this->stored_slug($sitewide));
+
+        $after = $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname');
+        $this->assertSame(0, slug::normalise_all());
+        $this->assertSame($after, $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname'));
+    }
+
+    /**
+     * A slug that already ends in the page's own id gains only the counter, never a second copy of the id.
+     *
+     * @return void
+     */
+    public function test_a_slug_ending_in_the_page_id_gains_only_the_counter(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $scope = $this->category_scope($category);
+        $first = (int) $this->pages()->create_category_page($category, ['menuname' => 'placeholder'])->id;
+        $second = (int) $this->pages()->create_category_page($category, ['menuname' => 'placeholder-2'])->id;
+        $DB->set_field('local_page', 'menuname', "z-{$second}", ['id' => $first]);
+        $DB->set_field('local_page', 'menuname', "z-{$second}", ['id' => $second]);
+
+        // Arriving in the context: the page's own slug is taken, and so is the -<id> form, which is the same value.
+        $this->assertSame("z-{$second}-2", slug::unique_in_context("z-{$second}", $second, $scope));
+
+        // The upgrade's routine settles the duplicate the same way.
+        $this->assertSame(1, slug::normalise_all());
+        $this->assertSame("z-{$second}", $this->stored_slug($first));
+        $this->assertSame("z-{$second}-2", $this->stored_slug($second));
+    }
+
+    /**
      * A page arriving in a context keeps a free slug, gains its id on a taken one, and a counter after that.
      *
      * The second context holds the same slugs and changes nothing: the answer is the arriving

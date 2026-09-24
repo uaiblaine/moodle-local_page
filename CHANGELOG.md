@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## [1.0.10+uai.10] - 2026-09-23
+
+Five fixes found in review of the category-pages series, and two upgrade steps. `db/install.xml` is
+unchanged: it already declares the schema the new steps bring an upgraded site to.
+
+### Fixed
+- **The upgrade's friendly-URL normalisation could leave two live pages at one address.** A duplicate
+  was moved to `<slug>-<id>` without that value being checked, so where a lower id already held it —
+  `x-3` beside two pages called `x`, the second of them page 3 — page 3 was moved onto `x-3`, and a
+  second run kept it there, which is how the claimed idempotence hid the duplicate;
+  `custompage::load_by_menuname()` then served only the higher id. `slug::normalise_all()` now moves a
+  page to the first of `-<id>`, `-<id>-2`, `-<id>-3` that no earlier row claimed and no other live
+  page of its context holds, so it never takes a later page's slug either. This is the rule
+  `slug::unique_in_context()` already applied to a page arriving in a category, now one method both
+  call. A slug that already ends in the page's id gains only the counter: `page-12` of page 12 moves
+  to `page-12-2`, where `unique_in_context()` used to answer `page-12-12-2`.
+- **A page saved with no friendly URL could take one another page held.** The save path named it
+  `page-<id>` without asking whether a live page of its context already held that name, which an
+  author may type (`page-` is not reserved and the field accepts it). It now goes through
+  `slug::unique_in_context()`, and the page becomes `page-<id>-2` in that case.
+- **The editor looked the category up before the login check.** An anonymous request for
+  `edit.php?category=<id>` died on a missing record for an id that does not exist and met the login
+  page for one that does, which told a visitor which category ids exist, and did database work for
+  requests nobody had logged in to make. `require_login()` now comes first, and both answers are the
+  login page.
+- **Upgrade steps no longer call live code.** Step 2026092202 called
+  `\local_page\local\slug::normalise_all()`, so a later change making that method read a column added
+  by a later step would have killed every upgrade from below it, part-way. The step now calls
+  `local_page_upgrade_normalise_slugs()` in the new `db/upgradelib.php`, a frozen copy that reads only
+  `id`, `menuname`, `deleted` and `contextid` and is never edited once a step calls it.
+- **Upstream defect: `hidetitle` was nullable on upgraded sites.** Upstream's step 2025060200 adds the
+  column without NOT NULL while `db/install.xml` declares it NOT NULL with the default `no`, so a site
+  upgraded through that step and a fresh install had different schemas, and
+  `admin/cli/check_database_schema.php` reported it. Step 2026092209 fills NULLs with `no` and makes
+  the column NOT NULL; the schema check now passes. A page that held NULL showed no title (the viewer
+  shows it only for `no`) and shows it from now on, as the editor already said it would. Worth
+  offering upstream.
+
+### Upgrade
+- Step 2026092209 runs `local_page_upgrade_hidetitle_notnull()`.
+- Step 2026092210 runs the corrected normalisation again, so a site that passed step 2026092202 with
+  the defect above loses any duplicate it was left with; on a site with none it changes nothing. List
+  the live slugs before and after, as the README's upgrade notes describe.
+
+### Added
+- Tests: three cases in `tests/local/slug_test.php` (the fixture above, a page skipping the forms
+  later pages hold, a slug already ending in its page id), one in `tests/save_page_test.php`, and
+  `tests/upgradelib_test.php`, which runs the frozen copy and the class on the same rows and requires
+  the same table, and repairs a `hidetitle` column made nullable first. A Behat scenario in
+  `tests/behat/category_pages.feature` opens the editor for a category that does not exist and for one
+  that does, with the new step `I visit the editor of a new page of the category "IDNUMBER"`.
+- Seven gates in `mutations/gates.conf`; `slug_unique_counter` now anchors on the shared loop.
+
 ## The category-pages series (1.0.10+uai.1 to uai.9) — 2026-09-23
 
 A summary for administrators of the nine releases below; it is not a release of its own, and the

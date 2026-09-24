@@ -46,9 +46,10 @@ class local_page_coverage extends \core\test\phpunit\coverage_info {
      * @var array Individual plugin files measured for coverage.
      *
      * lib.php and renderer.php are already in core's default include list;
-     * only the form file has to be named here.
+     * the form file and the code the upgrade steps call have to be named here.
      */
     protected $includelistfiles = [
+        'db/upgradelib.php',
         'forms/edit.php',
     ];
 }
