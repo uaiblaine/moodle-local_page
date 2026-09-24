@@ -60,12 +60,11 @@ class behat_local_page extends behat_base {
     /**
      * Visits a category's page at its canonical address, as the address builder spells it.
      *
-     * That is the route /local_page/category/N/slug where the site's router is configured — every
-     * fleet stack, whose Behat site reads the same config.php — and the script's own
-     * /local/page/index.php?category=N&page=slug where it is not: moodle-plugin-ci serves the Behat
-     * site with PHP's built-in server, which rewrites nothing and sets no routerconfigured, so a
-     * spelled-out route would 404 there. Asking the builder in this process is what makes the step
-     * visit the address the site itself would link to, on either kind of site.
+     * That is the route /local_page/category/N/slug where the site's router is configured, and the
+     * script's own /local/page/index.php?category=N&page=slug where it is not: a Behat site served by
+     * PHP's built-in server (as moodle-plugin-ci serves it) rewrites nothing and sets no
+     * routerconfigured, so a spelled-out route would 404 there. Asking the builder in this process
+     * makes the step visit the address the site itself would link to, on either kind of site.
      *
      * @Given /^I visit the routed page "(?P<slug_string>(?:[^"]|\\")*)" of the category "(?P<idnumber_string>(?:[^"]|\\")*)"$/
      * @param string $slug The page's friendly URL within the category
@@ -77,6 +76,26 @@ class behat_local_page extends behat_base {
 
         $categoryid = (int) $DB->get_field('course_categories', 'id', ['idnumber' => $idnumber], MUST_EXIST);
         $url = \local_page\local\links::category_page($categoryid, $slug);
+
+        $this->execute('behat_general::i_visit', [$url]);
+    }
+
+    /**
+     * Visits the editor of a new page in a category, logged in or not.
+     *
+     * The editor's address carries the category id, which Behat cannot compute, so this step resolves
+     * the idnumber and asks the plugin's own helper for the address: /local/page/edit.php?category=N.
+     *
+     * @Given /^I visit the editor of a new page of the category "(?P<idnumber_string>(?:[^"]|\\")*)"$/
+     * @param string $idnumber The category's idnumber
+     * @return void
+     */
+    public function i_visit_the_editor_of_a_new_page_of_the_category(string $idnumber): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/local/page/lib.php');
+
+        $categoryid = (int) $DB->get_field('course_categories', 'id', ['idnumber' => $idnumber], MUST_EXIST);
+        $url = local_page_edit_url(\core\context\coursecat::instance($categoryid));
 
         $this->execute('behat_general::i_visit', [$url]);
     }

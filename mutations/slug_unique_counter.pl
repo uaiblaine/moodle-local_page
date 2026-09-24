@@ -1,3 +1,3 @@
-# slug_unique_counter: slug::unique_in_context() stops at the -<id> form even when that is taken too,
-# and hands out a duplicate.
-s{        for \(\$counter = 2; self::is_taken\(\$candidate, \$id, \$contextid\); \$counter\+\+\) \{\n(?:[^\n]*\n){2}        \}\n}{};
+# slug_unique_counter: the shared collision rule stops at the -<id> form even when that is taken too,
+# and hands out a duplicate. normalise_all() and unique_in_context() both go through it.
+s{        for \(\$counter = 2; \$istaken\(\$candidate\); \$counter\+\+\) \{\n(?:[^\n]*\n){2}        \}\n}{};

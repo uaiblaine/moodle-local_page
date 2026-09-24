@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Tests for the save-time validation on the page edit form.
+ * Tests for the page edit form.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -33,13 +33,12 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 require_once($CFG->dirroot . '/local/page/forms/edit.php');
 
 /**
- * Tests for pages_edit_product_form::validation().
+ * Tests for pages_edit_product_form: its action, the fields definition() gates, and validation().
  *
- * Two of this form's fields are rules rather than text — the access level is evaluated as a
- * capability expression and the friendly URL becomes a public address — and neither had any
- * server-side validation before this stage. The tests call validation() directly, which is the
- * method's declared contract on moodleform: it takes the submitted values and returns the errors,
- * so nothing here needs a posted request.
+ * Two of this form's fields are rules rather than text: the access level is evaluated as a
+ * capability expression and the friendly URL becomes a public address. The tests call validation()
+ * directly, which is the method's declared contract on moodleform (submitted values in, errors
+ * out), so nothing here needs a posted request.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -81,15 +80,12 @@ final class edit_form_test extends \advanced_testcase {
     /**
      * The form posts back to an address that still names the context it was opened in.
      *
-     * moodleform's default action is strip_querystring($FULLME) (lib/formslib.php:199), which
-     * throws the query string away — so a category page posted back to a bare edit.php, which
-     * resolved the SYSTEM context from a URL carrying nothing and refused the author on
-     * local/page:addpages before the save path ever read the hidden contextid. Nothing in the
-     * unit tests of the save path could see that: they call the save path directly, and the
-     * request that never arrived is the whole defect.
+     * moodleform's default action is strip_querystring($FULLME), which drops the query string, so
+     * a new category page would post back to a bare edit.php, resolve the system context and be
+     * refused on local/page:addpages. Tests of the save path cannot see that: they call it directly.
      *
-     * MoodleQuickForm turns a moodle_url action into hidden inputs (lib/formslib.php:1746-1748),
-     * so what is asserted here is what the browser will actually post back.
+     * MoodleQuickForm turns a moodle_url action into hidden inputs (its _pageparams), so what is
+     * asserted here is what the browser will actually post back.
      *
      * @return void
      */
@@ -117,10 +113,8 @@ final class edit_form_test extends \advanced_testcase {
     /**
      * The QuickForm behind a built form, so a test can ask what definition() actually added.
      *
-     * moodleform keeps it protected and offers no accessor, and adding one to an upstream file for
-     * the sake of a test is a change to the fork's surface for nothing. Reflection reads it without
-     * touching the plugin — no setAccessible() call is needed, since PHP 8.1 made protected members
-     * reachable through ReflectionProperty by default.
+     * moodleform keeps it protected and offers no accessor, and the form class is upstream code, so
+     * the test reads it by reflection rather than adding one (PHP 8.1+ needs no setAccessible()).
      *
      * @param \pages_edit_product_form $form A built form.
      * @return \MoodleQuickForm The form's own element collection.
@@ -217,9 +211,9 @@ final class edit_form_test extends \advanced_testcase {
     /**
      * A capability this site does not define is refused, and named in the message.
      *
-     * A typo here does not fail loudly anywhere: has_capability() on an unknown name simply
-     * answers false, so a misspelt positive entry silently locks everybody out of the page and a
-     * misspelt negated one silently lets everybody in.
+     * A typo here fails quietly: has_capability() on an unknown name answers false with only a
+     * debugging notice, so a misspelt positive entry locks everybody out of the page and a
+     * misspelt negated one lets everybody in.
      *
      * @return void
      */
@@ -426,8 +420,8 @@ final class edit_form_test extends \advanced_testcase {
         $this->assertTrue($mform->getElement('onlyloggedin')->isFrozen(), 'the field is frozen');
         /*
          * Frozen at "logged in only", and held there by a constant: MoodleQuickForm::exportValues()
-         * merges the constants over everything else (formslib.php:2442), so this is the value the
-         * form yields whatever arrives in the request.
+         * merges the constants over everything else, so this is the value the form yields whatever
+         * arrives in the request.
          */
         $this->assertSame(
             ['1'],

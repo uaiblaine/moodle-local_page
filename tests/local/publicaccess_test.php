@@ -34,8 +34,8 @@ use PHPUnit\Framework\Attributes\CoversClass;
  * shape a fail-closed guard degrades into is an adapter that answers "no" to everything — and such
  * an adapter passes every refusal just as well as a correct one does. The public answers come from
  * \local_page\tests\public_predicate, a double handed in through the $predicate parameter, because
- * the CI matrix does not install local_unlistedcourses; the one test that reads the real predicate
- * skips itself where the plugin is absent.
+ * local_unlistedcourses need not be installed; the one test that reads the real predicate skips
+ * itself where the plugin is absent.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -104,9 +104,9 @@ final class publicaccess_test extends \advanced_testcase {
     /**
      * The real predicate, where local_unlistedcourses is installed: public only once a manager says so.
      *
-     * Skipped where the plugin is absent, which is every leg of the CI matrix — the adapter's own
-     * rules are pinned by the tests above through the double, and this one only proves that the
-     * constant names a class that really answers the question.
+     * Skipped where the plugin is absent. The adapter's own rules are pinned by the tests above
+     * through the double; this one only proves that the constant names a class that really answers
+     * the question.
      *
      * @return void
      */

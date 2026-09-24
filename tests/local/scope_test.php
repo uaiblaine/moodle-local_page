@@ -55,8 +55,9 @@ final class scope_test extends \advanced_testcase {
     /**
      * A row that names no context is a site-wide page.
      *
-     * Every row written before this stage is in exactly this state, which is why the convention
-     * exists at all: the column defaults to 0 and no migration touches a single row.
+     * Every row written before the contextid column existed is in exactly this state, which is why
+     * the convention exists at all: the column was added with a default of 0 and no upgrade step
+     * sets it.
      *
      * @return void
      */
@@ -216,11 +217,10 @@ final class scope_test extends \advanced_testcase {
     /**
      * Every capability this plugin declares has a language string.
      *
-     * Not cosmetic on Moodle 5.x: get_capability_string() falls through to get_string() whenever
-     * the component directory exists, the resulting developer debugging is rendered by Whoops, and
-     * Whoops turns it into an uncaught ErrorException that terminates the request — so one missing
-     * string takes down admin/roles/permissions.php mid-table for every context that lists the
-     * capability. Nothing else in the pipeline cross-checks db/access.php against lang/en.
+     * On Moodle 5.x with developer debugging, get_capability_string() falls through to get_string()
+     * whenever the component directory exists, and Whoops turns the resulting debugging notice into
+     * an uncaught ErrorException, so one missing string aborts admin/roles/permissions.php mid-table
+     * for every context that lists the capability. No static check compares db/access.php with lang/en.
      *
      * @return void
      */
@@ -247,14 +247,9 @@ final class scope_test extends \advanced_testcase {
     /**
      * The two language packs carry exactly the same keys.
      *
-     * The fleet rule is that lang/en and lang/pt_br are updated in the same commit, and nothing in
-     * any pipeline checks it: phpcs reads the ordering of each file on its own and never compares
-     * the two. A key added to one and forgotten in the other surfaces as an English word in the
-     * middle of a Portuguese screen, or — for a key only pt_br has — as a string nobody will ever
-     * see, and both go unnoticed for as long as nobody looks.
-     *
-     * It sits beside the capability-string test above because that one is the same kind of check:
-     * a cross-file assertion about the language pack, made where the file that needs it lives.
+     * lang/en and lang/pt_br are kept key for key, and phpcs checks each file's ordering on its own
+     * without comparing the two. A key missing from pt_br shows as English on a Portuguese screen; a
+     * key only pt_br has is never shown at all.
      *
      * @return void
      */

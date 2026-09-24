@@ -27,10 +27,11 @@ namespace local_page\tests;
 /**
  * A stand-in for \local_unlistedcourses\category_discoverability, answering from a list and counting.
  *
- * The CI matrix does not install local_unlistedcourses, so every test that needs a category to BE
- * public — the control beside each refusal — hands this class to the code under test through its
- * $predicate parameter instead. It answers true for exactly the ids it was reset with, and counts
- * every question, so a test can also assert that a logged-in user or a site-wide page never asks.
+ * local_unlistedcourses is not a dependency and may be absent from the test site, so every test that
+ * needs a category to BE public — the control beside each refusal — hands this class to the code
+ * under test through its $predicate parameter instead. It answers true for exactly the ids it was
+ * reset with, and counts every question, so a test can also assert that a logged-in user or a
+ * site-wide page never asks.
  *
  * It lives in tests/classes because three test files use it, and Moodle autoloads the
  * local_page\tests namespace from here during a PHPUnit run: a copy defined inside each test file

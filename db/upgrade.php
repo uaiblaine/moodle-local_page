@@ -34,6 +34,7 @@
  */
 function xmldb_local_page_upgrade($oldversion) {
     global $DB;
+    require_once(__DIR__ . '/upgradelib.php');
     $dbman = $DB->get_manager();
 
     if ($oldversion < 2025060200) {
@@ -66,12 +67,9 @@ function xmldb_local_page_upgrade($oldversion) {
         // can name one. Every existing row therefore reads as a site-wide page with nothing to
         // migrate, and categoryid stays NULL until a page is authored in a category.
         //
-        // This step comes before the slug normalisation below, and the order is load-bearing: that
-        // routine selects contextid, because friendly URLs are unique per context from this release
-        // on. Numbered the other way round the normalisation queried a column that did not exist
-        // yet, and every upgrade from an earlier release died there with the whole site's upgrade
-        // half applied. A fresh install reads install.xml, where the column has always been
-        // present, which is why no test site and no CI leg ever walked the broken order.
+        // This step must stay numbered below the slug normalisation, which selects contextid. A
+        // fresh install reads install.xml and never walks these steps, so only an upgrade from an
+        // earlier release shows a wrong order, as a fatal error part-way through the upgrade.
 
         $table = new xmldb_table('local_page');
 
@@ -85,7 +83,7 @@ function xmldb_local_page_upgrade($oldversion) {
             $dbman->add_field($table, $field);
         }
 
-        // Friendly URLs are unique per context from this stage on, so the lookup is by both.
+        // Friendly URLs are unique per context, so the lookup is by both.
         $index = new xmldb_index('contextmenuname', XMLDB_INDEX_NOTUNIQUE, ['contextid', 'menuname']);
         if (!$dbman->index_exists($table, $index)) {
             $dbman->add_index($table, $index);
@@ -102,7 +100,9 @@ function xmldb_local_page_upgrade($oldversion) {
         //
         // Every row the step above touched carries the 0 that means the system context, so this
         // pass groups them all together and sees exactly the site-wide table it was written for.
-        \local_page\local\slug::normalise_all();
+        // The routine is the frozen copy in db/upgradelib.php, never the class, so that a later
+        // change to the class cannot make this step read a column that does not exist yet.
+        local_page_upgrade_normalise_slugs();
 
         upgrade_plugin_savepoint(true, 2026092202, 'local', 'page');
     }
@@ -112,8 +112,8 @@ function xmldb_local_page_upgrade($oldversion) {
         // the moment it was saved, in core's trusttext sense. The column defaults to 0, which is
         // the safe reading for every row written before this release: a category page whose flag
         // is 0 is cleaned on the way out and on the way back into the editor. Site-wide pages
-        // ignore the flag entirely — they keep upstream's trusted rendering — so nothing an
-        // existing site is serving changes.
+        // ignore the flag and keep their trusted rendering, so nothing an existing site is
+        // serving changes.
 
         $table = new xmldb_table('local_page');
 
@@ -123,6 +123,25 @@ function xmldb_local_page_upgrade($oldversion) {
         }
 
         upgrade_plugin_savepoint(true, 2026092203, 'local', 'page');
+    }
+
+    if ($oldversion < 2026092209) {
+        // Step 2025060200 added hidetitle as nullable, while install.xml declares it NOT NULL with
+        // the default 'no', so an upgraded site and a fresh install had different schemas. Bring
+        // the upgraded ones into line: NULLs become 'no', then the column becomes NOT NULL.
+        local_page_upgrade_hidetitle_notnull();
+
+        upgrade_plugin_savepoint(true, 2026092209, 'local', 'page');
+    }
+
+    if ($oldversion < 2026092210) {
+        // The slug normalisation of step 2026092202 could hand a moved page a slug another live
+        // page of the same context held, and a second run kept it. It is run again, corrected, so
+        // that a site which already passed that step loses the duplicates it may have been left
+        // with. The routine is idempotent: on a site with none this step changes nothing.
+        local_page_upgrade_normalise_slugs();
+
+        upgrade_plugin_savepoint(true, 2026092210, 'local', 'page');
     }
 
     return true;

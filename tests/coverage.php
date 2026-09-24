@@ -27,17 +27,15 @@ defined('MOODLE_INTERNAL') || die();
 /**
  * Selects the plugin files that PHPUnit measures when generating coverage reports.
  *
- * Without this file the default include list would measure `classes/` and the
- * top-level `lib.php` and `renderer.php`, and nothing else. That default is
- * shaped for activity modules: it silently leaves out `forms/edit.php`, which
- * holds the whole edit form for this plugin, so the headline percentage would
- * be computed over a code base missing one of its largest files. Naming the
- * paths here fixes the denominator; it does not make the number look better.
+ * Without this file the default include list would measure `classes/`,
+ * `tests/generator/` and the top-level `lib.php` and `renderer.php`. That
+ * default is shaped for activity modules: it leaves out `forms/edit.php`, which
+ * holds the whole edit form for this plugin, so the percentage would be
+ * computed over a code base missing one of its largest files.
  *
- * Extends the namespaced class rather than the phpunit_coverage_info alias:
- * lib/phpunit/classes/coverage_info.php is deprecated on 5.2 and all ten of
- * core's own tests/coverage.php files use \core\test\phpunit\coverage_info.
- * This plugin is 5.2-only, so there is no older branch to stay compatible with.
+ * Extends the namespaced class rather than the phpunit_coverage_info alias,
+ * whose file lib/phpunit/classes/coverage_info.php is deprecated on 5.2; core's
+ * own tests/coverage.php files use \core\test\phpunit\coverage_info too.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -48,9 +46,10 @@ class local_page_coverage extends \core\test\phpunit\coverage_info {
      * @var array Individual plugin files measured for coverage.
      *
      * lib.php and renderer.php are already in core's default include list;
-     * only the form file has to be named here.
+     * the form file and the code the upgrade steps call have to be named here.
      */
     protected $includelistfiles = [
+        'db/upgradelib.php',
         'forms/edit.php',
     ];
 }

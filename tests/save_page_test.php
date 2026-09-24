@@ -30,7 +30,8 @@ use local_page\tests\ogimage_fixture;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
- * The save path mints a category page's /p/ code, once, and only while the router is configured.
+ * The save path mints a category page's /p/ code, once, and only while the router is configured,
+ * and stores an og image only when its content is the image its name says.
  *
  * The form is submitted with moodleform::mock_submit() and saved through the renderer, the way
  * edit.php saves it. save_page() ends in redirect(), which under PHPUnit throws
@@ -73,7 +74,7 @@ final class save_page_test extends \advanced_testcase {
      * @param int $pageid Existing page id, or 0 for a new page
      * @param string $menuname Friendly URL to submit
      * @param array $extra Further fields to submit
-     * @return int The saved page's id
+     * @return int The saved page's id; with an empty $menuname, the newest page's
      */
     private function save(\core\context $context, int $pageid, string $menuname, array $extra = []): int {
         global $CFG, $DB, $PAGE;
@@ -112,6 +113,11 @@ final class save_page_test extends \advanced_testcase {
             $this->assertSame('redirecterrordetected', $exception->errorcode, $exception->getMessage());
         }
 
+        if ($menuname === '') {
+            // The save named the page itself, so it is found as the row it inserted.
+            return (int) $DB->get_field_sql('SELECT MAX(id) FROM {local_page}');
+        }
+
         $params = ['menuname' => $menuname, 'contextid' => \local_page\local\scope::stored_contextid($context)];
         return (int) $DB->get_field('local_page', 'id', $params, MUST_EXIST);
     }
@@ -139,6 +145,41 @@ final class save_page_test extends \advanced_testcase {
     }
 
     /**
+     * A page saved with no slug is named page-<id>, and page-<id>-2 when a page of its context holds that name.
+     *
+     * Nothing stops an author typing page-<id> into another page before a new page gets that id, so
+     * the name the save gives goes through the same uniqueness rule as a typed one. The first save is
+     * the control: with nobody holding the name the page gets page-<id> itself. The blocker is then
+     * named after the id the next page will get, one above its own, and the save is asserted to have
+     * got exactly that id, so the suffix is the rule at work and not a different id.
+     *
+     * @return void
+     */
+    public function test_a_page_saved_without_a_slug_gets_a_name_no_other_page_holds(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $this->set_router(false);
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $context = \core\context\coursecat::instance($category);
+        $slug = static fn (int $pageid): string => (string) $DB->get_field('local_page', 'menuname', ['id' => $pageid]);
+
+        $plain = $this->save($context, 0, '');
+        $this->assertSame("page-{$plain}", $slug($plain));
+
+        $generator = $this->getDataGenerator()->get_plugin_generator('local_page');
+        $blocker = (int) $generator->create_category_page($category, ['menuname' => 'blocker'])->id;
+        $nextid = $blocker + 1;
+        $DB->set_field('local_page', 'menuname', "page-{$nextid}", ['id' => $blocker]);
+
+        $named = $this->save($context, 0, '');
+        $this->assertSame($nextid, $named, 'Precondition: the save got the id the blocker is named after.');
+        $this->assertSame("page-{$named}-2", $slug($named));
+        $this->assertSame("page-{$named}", $slug($blocker), 'The page that held the name keeps it.');
+    }
+
+    /**
      * Nothing is minted without the router, nor for a site-wide page with it.
      *
      * @return void
@@ -162,14 +203,12 @@ final class save_page_test extends \advanced_testcase {
     /**
      * A page saved with an og image finds its size already measured, so the first render states it.
      *
-     * The save path writes no measurement of its own, and two things measure the draft on the way in,
-     * both under the content hash the stored file then has, into core/file_imageinfo: core's own
-     * validation of a file manager with restricted types, through file_get_all_files_in_draftarea(),
-     * which calls stored_file::get_imageinfo() on every image; and the form's content check,
-     * \local_page\local\ogimage::is_image(), which reads the same through is_valid_image(). A
-     * save-time measurement in save_page() was written for this before the content check existed and
-     * swept silent (the og_measure_at_save gate reddened nothing), so it was removed; this test holds
-     * the property whichever of the two keeps providing it.
+     * save_page() measures nothing itself. Two things measure the draft on the way in, into
+     * core/file_imageinfo under the content hash the stored file then has: core's validation of a
+     * file manager with restricted types, through file_get_all_files_in_draftarea(), which calls
+     * stored_file::get_imageinfo() on every readable file; and the form's content check,
+     * {@see \local_page\local\ogimage::is_image()}, through is_valid_image(). This test holds the
+     * property whichever of the two provides it.
      *
      * The cache is purged first and asserted cold, so what the save leaves in it can only come from
      * the save; the expected size is the one the PNG was drawn with, never a second measurement.

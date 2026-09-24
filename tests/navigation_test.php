@@ -35,13 +35,12 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 /**
  * Tests for the navigation callback and the two URL builders.
  *
- * The node is the only way a category manager reaches their pages at all: the admin tree's
- * "Manage pages" entry is gated on local/page:addpages, which they do not hold. So the assertions
- * here are about delegation rather than about decoration — a node offered at the wrong category,
- * or to somebody holding nothing, is an invitation to a screen that will refuse them.
+ * The node is a category manager's only link to their pages (the admin tree's "Manage pages" entry
+ * needs local/page:addpages); a node offered at the wrong category, or to somebody holding
+ * nothing, leads to a screen that refuses them.
  *
- * Every negative assertion carries its own control, because a callback that adds nothing at all
- * satisfies all three of them at once.
+ * The two capability refusals each carry a control that adds the node, because a callback that
+ * adds nothing at all would satisfy both of them.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -116,8 +115,8 @@ final class navigation_test extends \advanced_testcase {
     /**
      * Somebody holding nothing here is offered nothing.
      *
-     * The control is the same user in the same category once the capability is granted: without it
-     * this test would pass against a callback that never adds a node at all.
+     * The control is a user granted the capability in the same category: without it this test would
+     * pass against a callback that never adds a node at all.
      *
      * @return void
      */
@@ -130,7 +129,7 @@ final class navigation_test extends \advanced_testcase {
         $this->setUser($this->getDataGenerator()->create_user());
         $this->assertFalse($this->node_for($context), 'a user holding nothing was offered the node');
 
-        // Control: the force that adds the node is switched on for the same category.
+        // Control: a user holding the capability in the same category is offered the node.
         $this->setUser($this->user_holding_at('local/page:managecategorypages', $context));
         $this->assertInstanceOf(navigation_node::class, $this->node_for($context));
     }
@@ -138,8 +137,8 @@ final class navigation_test extends \advanced_testcase {
     /**
      * Holding the capability in one category does not offer the node in another.
      *
-     * This is the assertion the whole delegation rests on: the capability is read at the category
-     * whose menu is being built, not at the system context and not at the user's own category.
+     * The capability is read at the category whose menu is being built, not at the system context
+     * and not at the category the user manages.
      *
      * @return void
      */
@@ -215,11 +214,7 @@ final class navigation_test extends \advanced_testcase {
             \local_page_edit_url($context)->params()
         );
 
-        /*
-         * An existing category page carries its id and nothing else: edit.php reads the stored row
-         * for the context, so a category parameter beside the id would be a second opinion the row
-         * has already settled.
-         */
+        // An existing category page carries its id alone; see local_page_edit_url().
         $this->assertSame(['id' => '7'], \local_page_edit_url($context, 7)->params());
     }
 

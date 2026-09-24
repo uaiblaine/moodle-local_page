@@ -4,11 +4,11 @@ Feature: A category's pages reach visitors only when the category is public
   As a visitor who is not logged in
   I need a category page to send me to the login page unless its category is public
 
-  # forcelogin is on in every scenario, because that is the site this plugin is built for: it serves
-  # pages to visitors on a site that otherwise demands a login, and forcelogin is not an ambient gate
-  # but a set of explicit reads in core that the viewer never makes. There is deliberately no scenario
-  # in which a PUBLIC category's page renders for a visitor: whether a category is public is decided
-  # by local_unlistedcourses, which the CI matrix does not install, so that control lives in PHPUnit
+  # forcelogin is on in every scenario: the plugin serves pages to visitors on sites that otherwise
+  # demand a login, and forcelogin is not an ambient gate but a set of explicit checks in core that
+  # the viewer never makes. There is deliberately no scenario in which a public category's page
+  # renders for a visitor: whether a category is public is decided by local_unlistedcourses, which is
+  # not a dependency and may be absent from the test site, so that control lives in PHPUnit
   # (tests/local/request_test.php) with a stand-in for the predicate.
   Background:
     Given the following config values are set as admin:
@@ -44,8 +44,8 @@ Feature: A category's pages reach visitors only when the category is public
     And "Username" "field" should not exist
 
   # The routed address, /local_page/category/N/slug, where the site's router is configured; the step
-  # asks the plugin's address builder, which answers the script's own address where it is not, as on
-  # the CI matrix (PHP's built-in server rewrites nothing). Either way it is the address the site links to.
+  # asks the plugin's address builder, which answers the script's own address where it is not (under
+  # PHP's built-in server, for one, which rewrites nothing). Either way it is the address the site links to.
   Scenario: A visitor at a private category's routed address meets the login page
     When I visit the routed page "handbook" of the category "CAT1"
     Then "Username" "field" should exist

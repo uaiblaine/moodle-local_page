@@ -138,7 +138,8 @@ classes/url_rewriter.php    Friendly-URL rewriting (pairs with .htaccess).
 classes/output/             page_card, page_content, pages_list renderables; opengraph, the head
                             tags of a page (Open Graph, SEO name metas, robots, canonical).
 templates/                  Their Mustache counterparts; opengraph.mustache is property metas only.
-db/                         install.xml, upgrade.php, access.php, uninstall.php, hooks.php.
+db/                         install.xml, upgrade.php, upgradelib.php (the frozen code the upgrade
+                            steps call), access.php, uninstall.php, hooks.php.
 .htaccess            SHIPS in the release zip — it is the friendly-URL feature,
                      not development scaffolding. Never export-ignore it.
 docs/nginx-runbook.md  The optional production NGINX steps (router fallback, root slugs,
@@ -169,8 +170,8 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   `\local_page\local\request::category()` refuses a visitor BEFORE any lookup
   unless the category is public, then reads the category's context, then looks
   the page up scoped to it, then applies the page's own rules, then sets up
-  `$PAGE` with `set_category_by_id()` first (it throws once a course or context
-  is set). Never reorder it: the answers a visitor gets would look identical,
+  `$PAGE` with `set_category_by_id()` first (it throws once a course or a
+  category is already set). Never reorder it: the answers a visitor gets would look identical,
   and what would change is that an anonymous request reaches the database
   before it is refused, doing work that differs between ids that exist and ids
   that do not. `request_test` holds the order by counting database statements on
@@ -228,7 +229,7 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   anonymous visitors can never hold a capability whose captype is `write` or
   whose riskbitmask carries `RISK_XSS`, `RISK_CONFIG` or `RISK_DATALOSS`
   (`lib/accesslib.php:481-485`). `local/page:addpages` is `RISK_XSS`
-  (`db/access.php:33`), so the editor-preview branch is unreachable for them
+  (`riskbitmask` at `db/access.php:35`), so the editor-preview branch is unreachable for them
   whatever the role definitions say.
 - **`lib.php` and `db/uninstall.php` must NOT carry a `MOODLE_INTERNAL` guard.**
   Both declare functions and nothing else, so the guard is exactly what
@@ -252,9 +253,10 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   `export-ignore` block nor `.gitignore` for that reason.
 - **`moodleform` throws the query string away when it picks its own action.**
   With no action argument it posts to `strip_querystring($FULLME)`
-  (`lib/formslib.php:199`), which is harmless while every screen is site-wide
-  and fatal once a page's context travels in the URL: the editor posted back to
-  a bare `edit.php` and was refused on the wrong capability. `forms/edit.php`
+  (`lib/formslib.php:201`), which is harmless while every screen is site-wide
+  and fatal once a page's context travels only in the URL: a NEW category page's
+  editor posted back to a bare `edit.php` and was refused on the wrong capability
+  (an existing page carries its id in a hidden field, so it was unaffected). `forms/edit.php`
   names its action, and `MoodleQuickForm` turns a `moodle_url` into hidden
   inputs (`lib/formslib.php:1746`). No unit test of the save path can see this
   class of defect — they call the save path directly, and the request that never
@@ -273,6 +275,29 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   path by running `mdl upgrade` against a stack whose stored version is older
   (`select value from m_config_plugins where plugin='local_page' and
   name='version'`), never by a green test run.
+- **Upgrade steps call frozen code in `db/upgradelib.php`, never the plugin's classes.** A step runs
+  against the schema of its own version whatever release the site is heading for, so a class method
+  that later learns to read a newer column kills every upgrade that starts below the step calling it.
+  `local_page_upgrade_normalise_slugs()` is a copy of `slug::normalise_all()` that reads only `id`,
+  `menuname`, `deleted` and `contextid`; steps 2026092202 and 2026092210 call it. Never edit a
+  function a step calls: a change of behaviour is a new function and a new step, and
+  `tests/upgradelib_test.php` (which runs the frozen copy and the class on the same rows and requires
+  the same table) then compares the class with the new function. `db/upgrade.php` requires the file
+  inside `xmldb_local_page_upgrade()`, so neither file has top-level code or a `MOODLE_INTERNAL` guard.
+- **Friendly URLs have one collision rule, `slug::first_free()`, and both paths that rename use it.**
+  `normalise_all()` (the upgrade) and `unique_in_context()` (a category move, and the save path naming
+  a page saved with no slug) move a page to the first of `-<id>`, `-<id>-2`, `-<id>-3` that is free;
+  a slug already ending in `-<id>` gains only the counter. In `normalise_all()` "free" means no row
+  claimed it earlier in the pass AND no other live row of the context holds it. Checking only the
+  first moved page 3 onto the `x-3` a lower id held, and a second run kept it there: the idempotence
+  test passed over a duplicate, because a value ending in the page's own id is the form that page
+  moves to. Prove a change here on a fixture where the `-<id>` form is already held, and assert the
+  table after the second run, not only its return value.
+- **`edit.php` checks the login before it reads a row or a category.** `scope::for_category()` is a
+  MUST_EXIST lookup, so an anonymous request reaching it answered an exception for a missing category
+  id and the login page for an existing one. `require_login()` with no course sets no course or
+  context on `$PAGE`, which is what keeps `set_category_by_id()` the first `set_*()` call after it.
+  The last scenario of `tests/behat/category_pages.feature` holds the order.
 - **A new `lib.php` callback is invisible on the web until the plugin function
   cache is rebuilt.** `get_plugins_with_function()` — which is how core finds
   `local_page_extend_navigation_category_settings()` — is memoised in MUC, so the
@@ -369,7 +394,9 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   `mdl behat m502 @local_page`, all scenarios deliberately non-JavaScript.
   `tests/behat/category_pages.feature` walks a category manager from the
   category page to the pages screen and back, which is the one path no unit
-  test can assert because it is made of links. `tests/behat/anonymous_viewer.feature`
+  test can assert because it is made of links, and sends a visitor to the
+  editor of a category that does not exist and of one that does (the login
+  page both times). `tests/behat/anonymous_viewer.feature`
   runs with `forcelogin` switched on in its Background — the production state,
   stated rather than assumed — and holds three things: a visitor still reads a
   site-wide page, a visitor asking for a category page meets the login page and
@@ -398,24 +425,29 @@ it matches no existing shape, re-examine the approach.
 
 ## State of the fork (2026-09-23)
 
-The category-pages series is complete, on stacked local branches that have never
-been pushed and have no pull request: `main` (`cf3df54`, upstream) ->
-`stage-0-fleet-onboarding` (`90e75b3`) -> `stage-1-security` (`909f8b4`) ->
-`stage-2-data-model` (`afc026f`) -> `stage-3-trust-publish` (`0360cf9`) ->
-`stage-4-authoring` (`961505b`, then `30f2fa8`, the fleet-rule mirror) ->
-`stage-5-viewer` (`2028da4`) -> `stage-6-addresses` (`12d88df`) ->
-`stage-7-opengraph` (`ba36f38`) -> `stage-8-lifecycle` (`10e3011`) ->
-`stage-9-adoption` (documentation only: the README's adoption guide, the CHANGELOG
-series summary, `docs/nginx-runbook.md`, the accepted-risk note above; no version
-bump, so the version stays `2026092208` / `v1.0.10+uai.9`). The intermediate
-branches `stage-2` and `stage-3` carry the broken upgrade order fixed in stage 4;
-never deploy one of them to a real site.
+The category-pages series (`1.0.10+uai.1` to `uai.9`) is merged: pull request #1
+took the stacked branches `stage-0-fleet-onboarding` (`90e75b3`) ->
+`stage-1-security` (`909f8b4`) -> `stage-2-data-model` (`afc026f`) ->
+`stage-3-trust-publish` (`0360cf9`) -> `stage-4-authoring` (`961505b`, then
+`30f2fa8`, the fleet-rule mirror) -> `stage-5-viewer` (`2028da4`) ->
+`stage-6-addresses` (`12d88df`) -> `stage-7-opengraph` (`ba36f38`) ->
+`stage-8-lifecycle` (`10e3011`) -> `stage-9-adoption` (`f225a45`) into `main`
+(merge `8d7392c`, `[skip ci]`; the gate was the local matrix). The stage branches
+stay on the remote as the record of the series; `stage-2` and `stage-3` carry the
+broken upgrade order fixed in stage 4, so never deploy one of them to a real site.
 
-What remains is the owner's call, not a session's: pushing the branches, and
-whether they reach `main` by pull request or by merge; the upstream pull request of
-the security fixes listed in the CHANGELOG series summary (decision D10); and
-production adoption, which follows the README's *Adopting category pages*
-checklist. There is never a release tag (D11). The theme follow-ups T1-T3 were
-deferred by decision D13 and are not part of the series. Outside this repo, the
-mount line `local_page|moodle-local_page|local/page|auto` in
-`~/dev/moodle-dev/plugins.conf` is still uncommitted there.
+Two branches follow it:
+
+- `comments-audit`: the comment audit (`89440e5`, comment lines only) and the
+  five code findings it raised, fixed as `1.0.10+uai.10` (two upgrade steps, the
+  frozen `db/upgradelib.php`, the shared slug collision rule, the editor's
+  login-before-lookup order). It is the tip of the fork.
+- `upstream-security-fixes` (on `cf3df54`, upstream's own `main`, unchanged since
+  the fork): the seven security fixes worth offering upstream, one commit each,
+  release `v1.0.11` unreleased, green on the legs upstream's own `ci.yml` runs.
+  The upstream pull request is opened only when the owner says so (decision D10).
+
+There is never a release tag (D11): installs come from git, syncs from upstream
+by merge. The theme follow-ups T1-T3 were deferred by decision D13. Production
+adoption follows the README's *Adopting category pages* checklist; the plugin is
+not installed at FUNDASEG yet.

@@ -34,16 +34,14 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 /**
  * Tests for the five functions that decide what a category page may contain and who may see it.
  *
- * The whole stage rests on one asymmetry, so it is worth stating before the assertions. A
- * SITE-WIDE page is written by a holder of local/page:addpages, which is declared RISK_XSS
- * precisely because such a page carries arbitrary markup; its content is rendered trusted and
- * uncleaned, exactly as upstream wrote it, and nothing here narrows that. A CATEGORY page is
- * written by somebody a site delegated one programme's pages to, and its content goes through
- * core's trusttext rules instead — cleaned unless the author was trusted, with
- * $CFG->enabletrusttext (off by default) and $CFG->forceclean deciding on top.
+ * A site-wide page (written under local/page:addpages, declared RISK_XSS) is rendered trusted and
+ * uncleaned, as upstream renders it; a category page goes through core's trusttext rules, cleaned
+ * unless its author was trusted, with $CFG->enabletrusttext (off by default) and $CFG->forceclean
+ * deciding on top. See {@see local_page_render_content()}.
  *
- * Every test therefore carries the site-wide case as its control: a rule that had simply started
- * cleaning everything would pass the category assertions on its own.
+ * The site-wide case or the system context is the control for the category assertions, in the same
+ * test or, for rendering, in test_render_content_leaves_a_site_wide_page_alone(): a rule that
+ * cleaned or refused everything would pass the category assertions on its own.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -89,7 +87,7 @@ final class trust_test extends \advanced_testcase {
     }
 
     /**
-     * Trust needs the site setting AND the capability, at the page's own context.
+     * Trust needs both the site setting and the capability, at the page's own context.
      *
      * The three refusals each carry the control that isolates them: the capability really is held
      * when the setting is what answers, and the setting really is on when the context is.
@@ -115,9 +113,8 @@ final class trust_test extends \advanced_testcase {
         $this->assertSame(0, \local_page_content_trust($context), 'author without the capability');
 
         /*
-         * With the feature switched off nobody is trusted, whoever they are — which is the state
-         * every Moodle site is in until an administrator changes it. The control is the assertion
-         * that the capability is still held, so what answers below is the setting.
+         * With the setting off, Moodle's default, nobody is trusted. The control asserts that the
+         * capability is still held, so what answers below is the setting.
          */
         $CFG->enabletrusttext = 0;
         $this->setUser($trusted);
@@ -143,8 +140,8 @@ final class trust_test extends \advanced_testcase {
     /**
      * A category page's content is cleaned unless its author was trusted, and core decides the rest.
      *
-     * Both stored HTML fields go through the same call, which is the change: the Content HTML block
-     * of a category page is no longer concatenated raw.
+     * Both stored HTML fields go through the same call, so a category page's Content HTML block is
+     * never rendered raw.
      *
      * @return void
      */
@@ -200,13 +197,11 @@ final class trust_test extends \advanced_testcase {
     }
 
     /**
-     * A site-wide page is rendered exactly as upstream renders it, under every one of those settings.
+     * A site-wide page keeps its markup under every trust setting, as upstream renders it.
      *
-     * This is the control for the test above: it keeps its markup with the trust flag at 0 and with
-     * the trust feature switched off, which are the two states that strip a category page. The one
-     * setting it does obey is $CFG->forceclean, and that is core's own rule — format_text() applies
-     * it over 'noclean' (lib/classes/formatting.php:195) — asserted here so that a later reading of
-     * "unconditionally" cannot go looking for a bug that is not there.
+     * The control for the test above: it keeps its markup with the trust flag at 0 and with the trust
+     * feature off, the two states that strip a category page. $CFG->forceclean does clean it, which is
+     * core's own rule: {@see \core\formatting::format_text()} applies it over 'noclean'.
      *
      * @return void
      */
@@ -246,10 +241,8 @@ final class trust_test extends \advanced_testcase {
     /**
      * An untrusted editor reopening a trusted category page gets cleaned text.
      *
-     * Without this the rendering rule undoes itself: the script the viewer never sees arrives in
-     * the untrusted editor's form, and saving the page unchanged stores it again under their own
-     * flag — where it is cleaned on the way out, but has been carried across a trust boundary in
-     * the meantime.
+     * Otherwise markup the viewer never sees would reach the untrusted editor's form, carried across
+     * the trust boundary the rendering rule draws.
      *
      * @return void
      */
@@ -290,9 +283,9 @@ final class trust_test extends \advanced_testcase {
         }
 
         /*
-         * The stored flag is the other half of the same rule: a page whose author was NOT trusted
-         * is cleaned before even a trusted editor sees it, which is what stops a page written
-         * while the feature was off from being blessed by whoever opens it next.
+         * The stored flag is the other half of the same rule: a page whose author was not trusted
+         * is cleaned before even a trusted editor sees it, so a page written while the feature was
+         * off is not blessed by whoever opens it next.
          */
         $storeduntrusted = $this->pages()->create_category_page((int) $category->id, [
             'pagecontent' => self::DIRTY,

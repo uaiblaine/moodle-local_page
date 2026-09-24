@@ -32,9 +32,8 @@ use Psr\Http\Message\ResponseInterface;
  * Core's /p/{shortcode} route, end to end: the route, core's manager, this plugin's handler.
  *
  * The rows are written directly, never through links::share(): spelling an address builds a router,
- * and the harness would then build a second one whose application maps every route onto the first
- * one's collector again. One router per process, the harness's; expected addresses are spelled
- * after the request.
+ * and the harness's own would then map every route a second time onto the first one's collector.
+ * The harness's router must be the only one, so expected addresses are spelled after the request.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -72,7 +71,7 @@ final class shortlink_route_test extends \core\tests\router\route_testcase {
     }
 
     /**
-     * A visitor on a site that forces login is sent to the page, in the production shape.
+     * Request a code's /p/ address as a visitor, with the router configured and forcelogin on.
      *
      * @param string $code The short code
      * @return ResponseInterface
@@ -119,8 +118,8 @@ final class shortlink_route_test extends \core\tests\router\route_testcase {
     /**
      * The code of a deleted page is not found, even while its row is still in the table.
      *
-     * pages.php forgets a page's codes when it deletes the page; this is the handler refusing a row
-     * that was left behind anyway, which a page deleted by any other route would leave.
+     * pages.php and a category's deletion forget a page's codes; this pins the handler refusing a row
+     * left behind anyway, as a page deleted directly in the database would leave.
      *
      * @return void
      */

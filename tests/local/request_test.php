@@ -30,21 +30,21 @@ use PHPUnit\Framework\Attributes\CoversClass;
 /**
  * Tests for \local_page\local\request: the viewer's guard order, for both kinds of address.
  *
- * Every test runs with $CFG->forcelogin on, which is the production state this plugin is built for:
- * the request class never reads it, and a visitor under it holds no capability at all
- * (lib/accesslib.php:476), so a page that renders for them here renders for them on the real site.
+ * Every test runs with $CFG->forcelogin on: the request class never reads it, and under it somebody
+ * not logged in holds no capability at all (see has_capability()), so a page that renders for them
+ * here renders for them on any site.
  *
  * Whether a category is public comes from \local_page\tests\public_predicate, handed in through the
- * $predicate parameter — the CI matrix does not install local_unlistedcourses, and a refusal can only
- * be told apart from "refuses everything" by a public category served in the same test.
+ * $predicate parameter — local_unlistedcourses need not be installed, and a refusal can only be told
+ * apart from "refuses everything" by a public category served in the same test.
  *
- * redirect() is never reached: under PHPUnit it throws a moodle_exception carrying no URL, which is
- * why the class RETURNS its redirect target and index.php is the one that calls redirect().
+ * redirect() is never reached: in a CLI process it throws a moodle_exception carrying no URL, which
+ * is why the class returns its redirect target and index.php or the route controller issues it.
  *
  * Addresses are spelled through \local_page\local\links, which answers the route while
- * $CFG->routerconfigured is set and the script otherwise. The fleet stacks set it in the PHPUnit
- * config and the CI matrix does not, so a test whose answer depends on it sets it explicitly; the
- * others hold on either setting because they compare against the builder.
+ * $CFG->routerconfigured is set and the script otherwise. The value a test site inherits from its
+ * config.php varies, so a test whose answer depends on it sets it explicitly; the others hold on
+ * either setting because they compare against the builder.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -136,7 +136,7 @@ final class request_test extends \advanced_testcase {
     }
 
     /**
-     * The control the plan requires: a public category's page renders for a visitor, a private one's does not.
+     * A public category's page renders for a visitor, a private one's does not.
      *
      * The two pages are identical — both live, both open to visitors by their own rules, both at the
      * same slug — so the only thing that can tell them apart is whether their category is public.

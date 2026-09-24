@@ -214,8 +214,7 @@ final class before_standard_head_html_generation_test extends \advanced_testcase
     /**
      * The whole head carries one og:title, whether it comes from the meta title or the page name.
      *
-     * Upstream wrote the meta title as a name meta called og:title and the page name again as the
-     * real property: two titles, and the one a scraper reads was never the one written for it.
+     * Upstream wrote two og:title tags; {@see \local_page\output\opengraph} explains which one is kept.
      *
      * @return void
      */
@@ -285,8 +284,8 @@ final class before_standard_head_html_generation_test extends \advanced_testcase
      * A page withheld from the viewer puts nothing in the head; the same page published does.
      *
      * This goes through the viewer's own path: the request class decides, local_page_render_view()
-     * renders, and the head is what the hook then writes. The site's own additional head HTML is left
-     * exactly as it was either way — the plugin no longer writes to it.
+     * renders, and the head is what the hook then writes. The site's own $CFG->additionalhtmlhead is
+     * left as it was either way: the tags reach the head through the hook alone.
      *
      * @return void
      */

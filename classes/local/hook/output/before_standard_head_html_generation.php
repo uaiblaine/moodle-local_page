@@ -29,14 +29,13 @@ use local_page\output\opengraph;
 /**
  * Writes a custom page's head tags into the document head.
  *
- * The hook is dispatched from core_renderer::standard_head_html(), so it runs for every page the
- * site renders — an error page included; the callback does nothing unless local_page_render_view()
- * registered tags for the page being rendered, and that function registers them last, after
- * everything that could throw, so an error page never carries a page's tags.
+ * core_renderer::standard_head_html() dispatches the hook for every page, error pages included, so
+ * the callback writes nothing unless local_page_render_view() registered tags for the current page
+ * ({@see \local_page\output\opengraph::set()}). That function registers them last, after everything
+ * that could throw, so an error page never carries a page's tags.
  *
- * This replaces upstream's $CFG->additionalhtmlhead, which the plugin no longer touches: appending
- * to a site setting mid-request put the tags wherever the theme printed that setting and left them
- * in $CFG for anything rendered later in the same process.
+ * The tags are not appended to $CFG->additionalhtmlhead: a site setting changed mid-request is
+ * printed wherever the theme prints it and stays in $CFG for anything rendered later in the process.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine

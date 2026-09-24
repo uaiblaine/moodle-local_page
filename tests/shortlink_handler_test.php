@@ -68,7 +68,7 @@ final class shortlink_handler_test extends \advanced_testcase {
     }
 
     /**
-     * A live page's id answers its canonical address, whichever the router setting is today.
+     * A page's id answers its canonical address under the router setting of the moment.
      *
      * @return void
      */
@@ -92,7 +92,7 @@ final class shortlink_handler_test extends \advanced_testcase {
     }
 
     /**
-     * Anything that is not a live page of this plugin's link type answers null, core's "not found".
+     * A foreign link type, a malformed id, a deleted page or a missing one answers null, core's "not found".
      *
      * @return void
      */
@@ -113,7 +113,7 @@ final class shortlink_handler_test extends \advanced_testcase {
             $this->assertNull($handler->process_shortlink(links::LINKTYPE, $identifier), "Identifier '{$identifier}'.");
         }
 
-        // Control: the live page of the same category answers.
+        // Control: the page of the same category that is not deleted answers.
         $this->assertNotNull($handler->process_shortlink(links::LINKTYPE, (string) $page->id));
     }
 }

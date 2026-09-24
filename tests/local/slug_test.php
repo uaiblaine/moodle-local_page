@@ -69,7 +69,7 @@ final class slug_test extends \advanced_testcase {
     }
 
     /**
-     * A slug is taken by a live page, and free once that page has been deleted.
+     * A slug is taken by a live page, except for that page itself, and an empty slug never is.
      *
      * @return void
      */
@@ -100,9 +100,8 @@ final class slug_test extends \advanced_testcase {
     /**
      * Deleting a page releases the address it was holding.
      *
-     * pages.php is a script rather than a function, so what is asserted here is the pair of calls
-     * that script makes: the mangling deleted_name() applies, and the fact that is_taken() then
-     * reports the original slug as free.
+     * pages.php is a script, so this repeats the update it makes (the flag and deleted_name() in
+     * one write) and asserts that is_taken() then reports the original slug as free.
      *
      * @return void
      */
@@ -136,9 +135,8 @@ final class slug_test extends \advanced_testcase {
     /**
      * A slug is only taken within the context that owns it.
      *
-     * This is the whole point of making uniqueness per context: two faculties may each want a page
-     * called "contato", and neither of them has any business preventing the other. A site-wide
-     * page of the same name is a third, separate address.
+     * Two categories may each own a page called "contato", and a site-wide page of the same name
+     * is a third, separate address.
      *
      * @return void
      */
@@ -155,7 +153,7 @@ final class slug_test extends \advanced_testcase {
         // Taken where it was written...
         $this->assertTrue(slug::is_taken('contato', 0, $scopea));
 
-        // ...and free everywhere else, which is the assertion this stage exists for.
+        // ...and free in every other context.
         $this->assertFalse(slug::is_taken('contato', 0, $scopeb));
         $this->assertFalse(slug::is_taken('contato'), 'the system scope is not the category scope');
 
@@ -165,9 +163,9 @@ final class slug_test extends \advanced_testcase {
         $this->assertFalse(slug::is_taken('contato', (int) $second->id, $scopeb), 'a page keeps its own slug');
 
         /*
-         * Control: a site-wide page called "contato" makes the SYSTEM scope answer true while both
-         * category answers stay exactly as they were. Without it, an is_taken() that simply
-         * answered false for everything would satisfy the three assertions above.
+         * Control: a site-wide page called "contato" makes the system scope answer true while both
+         * category answers stay as they were. Without it, an is_taken() that answered false for
+         * everything would satisfy the three assertions above.
          */
         $this->pages()->create_page(['menuname' => 'contato']);
         $this->assertTrue(slug::is_taken('contato'));
@@ -214,7 +212,7 @@ final class slug_test extends \advanced_testcase {
     public function test_is_reserved_covers_core_paths_router_segments_and_plugin_names(): void {
         $this->resetAfterTest();
 
-        // A webroot directory, a webroot script, and two router segments.
+        // Each is a webroot directory, a webroot script or a router segment.
         foreach (['course', 'login', 'pluginfile', 'r', 'p', 's', 'esm', 'admin', 'lib'] as $name) {
             $this->assertTrue(slug::is_reserved($name), "{$name} is answered by Moodle itself");
         }
@@ -228,10 +226,10 @@ final class slug_test extends \advanced_testcase {
         $this->assertTrue(slug::is_reserved('  LOGIN '));
 
         /*
-         * Controls: ordinary slugs — including ones that merely start with the letters of a
-         * reserved name, or carry a plugin type without the underscore — are accepted. Without
-         * these, an is_reserved() that answered true for everything would pass the assertions
-         * above and no page could ever be saved.
+         * Controls: ordinary slugs are accepted, including ones that merely start with a reserved
+         * name, like courses or logins, and a plugin type without the underscore, like localfoo;
+         * local alone is reserved as a webroot directory. Without these, an is_reserved() that
+         * answered true for everything would pass the assertions above.
          */
         foreach (['about-us', 'contato', 'courses', 'logins', 'local', 'localfoo', 'my-blog'] as $name) {
             $expected = $name === 'local';
@@ -245,9 +243,8 @@ final class slug_test extends \advanced_testcase {
     /**
      * normalise_all() leaves a stored slug that would now be refused exactly as it is.
      *
-     * A rename at upgrade time breaks an address that has been published and working; the form
-     * refuses new ones instead, where nothing is lost. This is a deliberate asymmetry, so it is
-     * asserted rather than left to the comment that explains it.
+     * Only the form refuses reserved slugs; renaming a published one at upgrade time would break
+     * its address. See {@see slug::is_reserved()}.
      *
      * @return void
      */
@@ -256,7 +253,7 @@ final class slug_test extends \advanced_testcase {
 
         $legacy = $this->pages()->create_page(['menuname' => 'login']);
 
-        // Control: the routine really ran and really does rewrite rows in this very table.
+        // Control: the routine ran and rewrote a row, lower-casing Legal.
         $this->pages()->create_page(['menuname' => 'Legal']);
         $this->assertGreaterThan(0, slug::normalise_all());
 
@@ -267,14 +264,11 @@ final class slug_test extends \advanced_testcase {
     /**
      * A page restored by hand cannot take back the address its successor is now serving.
      *
-     * This is the scenario the mangling in deleted_name() protects, and it is a different one from
-     * the `deleted = 0` filter inside is_taken(): the filter hides the row while the flag is set,
-     * the mangling is what survives the flag being cleared. Nothing in the plugin restores a page,
-     * but `deleted` is a plain column and an administrator who clears it — by hand, or with the
-     * raw SQL that undoes a delete made in error — must not end up with two live pages answering
-     * to the same friendly URL. custompage::load_by_menuname() resolves that with ORDER BY id DESC
-     * and IGNORE_MULTIPLE, so the successor's page would simply stop answering, with no error
-     * anywhere and no sign of what took it over.
+     * The `deleted = 0` filter in is_taken() hides the row only while the flag is set; the mangling
+     * in deleted_name() is what survives an administrator clearing the flag by hand (nothing in the
+     * plugin restores a page). Without it two live pages would share one friendly URL, and
+     * custompage::load_by_menuname() (ORDER BY id DESC, IGNORE_MULTIPLE) would silently serve only
+     * the one with the higher id.
      *
      * @return void
      */
@@ -307,7 +301,7 @@ final class slug_test extends \advanced_testcase {
          */
         $this->assertTrue(slug::is_taken($restored));
 
-        // The two live pages hold different addresses, which is the whole point of the mangling.
+        // The two live pages hold different addresses.
         $this->assertSame('about-deleted-' . $id, $restored);
         $this->assertSame('about', $this->stored_slug($successorid));
         $this->assertFalse(slug::is_taken($restored, $id));
@@ -388,9 +382,8 @@ final class slug_test extends \advanced_testcase {
     /**
      * Running the normalisation twice changes nothing the second time.
      *
-     * The upgrade step calls it once, but an upgrade can be replayed and the routine is written to
-     * survive that. A second pass that kept appending suffixes would rename every page on every
-     * upgrade, and each rename breaks a published URL.
+     * An upgrade can be replayed, and a second pass that kept appending suffixes would rename
+     * pages, breaking their published URLs.
      *
      * @return void
      */
@@ -412,6 +405,102 @@ final class slug_test extends \advanced_testcase {
 
         $this->assertSame(0, slug::normalise_all());
         $this->assertSame($after, $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname'));
+    }
+
+    /**
+     * A moved page never lands on a slug another live page of its context holds, and a second run changes nothing.
+     *
+     * The lowest id holds x-<third>, which is exactly the form the third page moves to when it loses
+     * x to the second one. The form is taken, so the third page goes on to x-<third>-2. Handing it
+     * x-<third> would leave two live pages on one address, and a second run would keep them there,
+     * because a slug that already ends in the page's id is the form that page would move to.
+     *
+     * @return void
+     */
+    public function test_normalise_all_never_moves_a_page_onto_a_slug_already_held(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $first = (int) $this->pages()->create_category_page($category, ['menuname' => 'placeholder'])->id;
+        $second = (int) $this->pages()->create_category_page($category, ['menuname' => 'x'])->id;
+        $third = (int) $this->pages()->create_category_page($category, ['menuname' => 'x'])->id;
+        $DB->set_field('local_page', 'menuname', "x-{$third}", ['id' => $first]);
+
+        // Only the third page moves.
+        $this->assertSame(1, slug::normalise_all());
+
+        $this->assertSame("x-{$third}", $this->stored_slug($first));
+        $this->assertSame('x', $this->stored_slug($second));
+        $this->assertSame("x-{$third}-2", $this->stored_slug($third));
+
+        // The run is idempotent for real: the second one writes nothing and the table is unchanged.
+        $after = $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname');
+        $this->assertCount(3, array_unique($after), 'Three live pages, three addresses.');
+        $this->assertSame(0, slug::normalise_all());
+        $this->assertSame($after, $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname'));
+    }
+
+    /**
+     * A page that has to move skips every form a later page of its context holds, and counts on.
+     *
+     * The later pages hold x-<second> and x-<second>-2, the first two forms the second page could
+     * move to, so it ends on x-<second>-3 and both keep the slugs they were already serving. A
+     * site-wide page holding x-<second>-3 is the control that the forms are compared within the
+     * context only: were it counted, the second page would have gone on to -4.
+     *
+     * @return void
+     */
+    public function test_normalise_all_skips_forms_a_later_page_holds_and_counts_on(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $first = (int) $this->pages()->create_category_page($category, ['menuname' => 'x'])->id;
+        $second = (int) $this->pages()->create_category_page($category, ['menuname' => 'x'])->id;
+        $third = (int) $this->pages()->create_category_page($category, ['menuname' => "x-{$second}"])->id;
+        $fourth = (int) $this->pages()->create_category_page($category, ['menuname' => "x-{$second}-2"])->id;
+        $sitewide = (int) $this->pages()->create_page(['menuname' => "x-{$second}-3"])->id;
+
+        $this->assertSame(1, slug::normalise_all());
+
+        $this->assertSame('x', $this->stored_slug($first));
+        $this->assertSame("x-{$second}-3", $this->stored_slug($second));
+        $this->assertSame("x-{$second}", $this->stored_slug($third));
+        $this->assertSame("x-{$second}-2", $this->stored_slug($fourth));
+        $this->assertSame("x-{$second}-3", $this->stored_slug($sitewide));
+
+        $after = $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname');
+        $this->assertSame(0, slug::normalise_all());
+        $this->assertSame($after, $DB->get_records_menu('local_page', null, 'id ASC', 'id, menuname'));
+    }
+
+    /**
+     * A slug that already ends in the page's own id gains only the counter, never a second copy of the id.
+     *
+     * @return void
+     */
+    public function test_a_slug_ending_in_the_page_id_gains_only_the_counter(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $category = (int) $this->getDataGenerator()->create_category()->id;
+        $scope = $this->category_scope($category);
+        $first = (int) $this->pages()->create_category_page($category, ['menuname' => 'placeholder'])->id;
+        $second = (int) $this->pages()->create_category_page($category, ['menuname' => 'placeholder-2'])->id;
+        $DB->set_field('local_page', 'menuname', "z-{$second}", ['id' => $first]);
+        $DB->set_field('local_page', 'menuname', "z-{$second}", ['id' => $second]);
+
+        // Arriving in the context: the page's own slug is taken, and so is the -<id> form, which is the same value.
+        $this->assertSame("z-{$second}-2", slug::unique_in_context("z-{$second}", $second, $scope));
+
+        // The upgrade's routine settles the duplicate the same way.
+        $this->assertSame(1, slug::normalise_all());
+        $this->assertSame("z-{$second}", $this->stored_slug($first));
+        $this->assertSame("z-{$second}-2", $this->stored_slug($second));
     }
 
     /**

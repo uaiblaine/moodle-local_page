@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Tests for the page visibility predicate in local/page/lib.php.
+ * Tests for the access predicates, the file route and the category callbacks in local/page/lib.php.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -33,25 +33,20 @@ global $CFG;
 require_once($CFG->dirroot . '/local/page/lib.php');
 
 /**
- * Tests for local_page_user_can_view_page().
+ * Tests for the access, file-serving and category-callback functions of local/page/lib.php.
  *
- * This one function is the plugin's whole read-side access rule: the public
- * renderer calls it before showing a page, and the pluginfile callback calls it
- * before serving a file that a page embeds. So a hole here is not a display
- * bug, it is a file served to someone who should not have it.
+ * local_page_user_can_view_page() is the plugin's whole read-side access rule: the viewer asks it
+ * before showing a page, and the pluginfile callback asks it before serving a file that a page
+ * embeds. So a hole here is not a display bug, it is a file served to someone who should not have it.
  *
- * Two facts about core decide how these tests are written, both measured
- * against MOODLE_502_STABLE:
+ * Two rules of core's has_capability() decide how these tests are written:
  *
- * - has_capability() returns false for every capability when the visitor is not
- *   logged in and $CFG->forcelogin is on (lib/accesslib.php:476). The predicate
- *   never reads forcelogin itself, so the anonymous cases are asserted with it
- *   both on and off; they must agree.
- * - guests and anonymous visitors can never hold a capability whose captype is
- *   'write' or whose riskbitmask carries RISK_XSS, RISK_CONFIG or RISK_DATALOSS
- *   (lib/accesslib.php:481-485), whatever the role definitions say.
- *   local/page:addpages is RISK_XSS (db/access.php:33), so the editor-preview
- *   branch is unreachable for them by construction.
+ * - With $CFG->forcelogin on, every capability check answers false for a visitor who is not
+ *   logged in. The predicate never reads forcelogin itself, so the anonymous cases are asserted
+ *   with it both on and off; they must agree.
+ * - Guests and anonymous visitors never hold a capability whose captype is 'write' or whose
+ *   riskbitmask carries RISK_XSS, RISK_CONFIG or RISK_DATALOSS, whatever the role definitions say.
+ *   local/page:addpages is RISK_XSS, so the editor-preview branch is unreachable for them.
  *
  * The category callbacks at the end of the file are driven through core_course_category's own
  * delete_full() and delete_move(), because what they must survive — core deleting the category's
@@ -95,9 +90,9 @@ final class lib_test extends \advanced_testcase {
     /**
      * A fresh user holding exactly one capability, at one context and nowhere else.
      *
-     * The context matters from this stage on: a manager of one category must not be able to
-     * preview or edit another category's pages, and the only way to assert that is to grant the
-     * capability where it is meant to apply rather than site-wide.
+     * A manager of one category must not be able to preview or edit another category's pages, and
+     * the only way to assert that is to grant the capability where it is meant to apply rather than
+     * site-wide.
      *
      * @param string $capability Capability name, e.g. local/page:managecategorypages.
      * @param \core\context $context Context to grant and assign the role at.
@@ -345,11 +340,10 @@ final class lib_test extends \advanced_testcase {
         $draft = $this->pages()->create_page(['status' => 'draft']);
 
         /*
-         * The holder is given moodle/site:config and NOTHING else - in
-         * particular not local/page:addpages. That separation is the whole
-         * point: a site administrator satisfies the editor-preview branch as
-         * well, so the admin test above passes whether or not the site:config
-         * short-circuit is still there. This one goes red if it is removed.
+         * The holder has moodle/site:config and not local/page:addpages. A site
+         * administrator also satisfies the editor-preview branch, so the admin
+         * test above would still pass without the site:config short-circuit;
+         * this one fails if it is removed.
          */
         $this->setUser($this->user_holding('moodle/site:config'));
         $this->assertTrue(\local_page_user_can_view_page($draft), 'site:config holder');
@@ -417,10 +411,10 @@ final class lib_test extends \advanced_testcase {
          * the entry ends up granting the page to every visitor there is,
          * anonymous ones included.
          *
-         * These assertions record the CURRENT behaviour, not the desired one.
-         * Stage 1 closes this at SAVE time, by refusing an access level made up
-         * of negations only; the predicate keeps reading already-stored rows
-         * exactly as it does today, so this test must keep passing afterwards.
+         * These assertions record the current behaviour, not the desired one.
+         * The edit form refuses an access level made only of negations
+         * (pages_edit_product_form::validation()), but the predicate reads a
+         * stored row as it is, however it was written.
          */
         $page = $this->pages()->create_page(['accesslevel' => '!moodle/site:config']);
 
@@ -493,11 +487,10 @@ final class lib_test extends \advanced_testcase {
      * The request carries that file's ETag in If-None-Match, so a file that IS sent is answered 304 by
      * readfile_accel() before a byte is written or an output buffer touched, and with dontdie the call
      * returns null — where every refusal returns false. That is what lets a positive serve be
-     * asserted at all, and it is what keeps a refusal test quiet when the guard it holds is mutated
-     * away: the file that then reaches the send is answered 304 too, instead of being written into
-     * PHPUnit's output, where a PNG's binary bytes make the mutation sweep's log unreadable to grep.
-     * Name the bytes of the file the route would send; a different file reaching the send is written
-     * out and fails the run rather than passing it.
+     * asserted at all, and it keeps a refusal test quiet if the guard it covers is removed: the file
+     * that then reaches the send is answered 304 too, instead of its bytes being written into
+     * PHPUnit's output. Name the bytes of the file the route would send; a different file reaching
+     * the send is written out and fails the run rather than passing it.
      *
      * The send still calls header(), and a CLI process that has already printed PHPUnit's progress
      * line answers every header() with "Cannot modify header information". Exactly that warning is
@@ -644,13 +637,12 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
-     * Restrictions on the READER leave the image servable; the viewer predicate is the control.
+     * Restrictions on the reader leave the image servable; the viewer predicate is the control.
      *
-     * This is the difference the gate exists to express. A scraper fetching an og:image is
-     * anonymous, so gating the image on onlyloggedin or on a capability would break every link
-     * preview; and it would protect nothing, because index.php emits the og:image tag only after
-     * the viewer has passed local_page_user_can_view_page(). The control asserts exactly that: the
-     * same rows are refused by the viewer predicate to the same anonymous visitor.
+     * This is the difference the gate exists to express: a scraper fetching an og:image is
+     * anonymous, and the og:image tag is only registered for a viewer who passed
+     * local_page_user_can_view_page() ({@see local_page_ogimage_is_servable()}). The control shows
+     * the same rows refused by the viewer predicate to the same anonymous visitor.
      *
      * @return void
      */
@@ -792,7 +784,7 @@ final class lib_test extends \advanced_testcase {
      * The files sit side by side in the area of one published page, so the publication and the
      * context gates answer the same for all of them and only the file itself tells them apart. The
      * .png ones are typed image/png by their name; the SVG is what an author could upload as
-     * cover.png, and the extension check alone let it through. The same SVG under its own name is
+     * cover.png, which the extension check alone would let through. The same SVG under its own name is
      * refused by name: core counts an SVG as a web image, so the content check alone would pass it.
      *
      * @return void
@@ -1043,16 +1035,15 @@ final class lib_test extends \advanced_testcase {
     /**
      * A category page's embedded files are served through its own context and item id, and nowhere else.
      *
-     * The fixture deliberately stores the SAME file name under the SAME item id in a second
-     * category's context. Nothing in the plugin writes that — a page's files only ever go to the
-     * page's own context — but the file table outlives rows, through a restore, a reinstall or a
-     * move made by hand, and it is what makes the contextid clause in the lookup load-bearing
-     * instead of incidental: without it the row is found by id alone and this context serves it.
+     * The fixture deliberately stores the same file name under the same item id in a second
+     * category's context. The plugin never writes that on purpose — a page's files only ever go to
+     * the page's own context — but a move interrupted part-way or made by hand can leave such a file,
+     * and it is what makes the contextid clause in the lookup load-bearing instead of incidental:
+     * without it the row is found by id alone and this context serves it.
      *
-     * Only refusals are asserted through local_page_pluginfile(), because a successful serve
-     * reaches readfile_accel(), which closes every output buffer PHPUnit has. The positive
-     * direction is held by the controls, which show the page viewable and each fixture file really
-     * present in the area the call is refusing to read from.
+     * Only refusals are asserted through local_page_pluginfile(). The positive direction is held by
+     * the controls, which show the page viewable and each fixture file really present in the area
+     * the call is refusing to read from.
      *
      * @return void
      */
@@ -1110,15 +1101,11 @@ final class lib_test extends \advanced_testcase {
     /**
      * A page of another context can never authorise a file of the site-wide area.
      *
-     * The site-wide pagecontent area is shared: every page there writes under item id 0, so who
-     * owns a file can only be read out of the page content that names it. That search IS the
-     * authorisation decision, and it has to stay inside one context, because the pages of a
-     * category are authored by whoever holds local/page:managecategorypages there — which is not
-     * a power over the site's own files. Without the context clause such an author pastes a
-     * reference to a site-wide file into their own page and the file follows, whatever state the
-     * page it really belongs to is in.
+     * Every site-wide page writes its files under item id 0, so a file's owner is read out of the
+     * content of the pages that name it, and that search must stay inside the context the file is
+     * asked through ({@see local_page_pages_referencing_pagecontent_file()}).
      *
-     * The second half is the point of the test: the site-wide page holding the file is a DRAFT the
+     * The second half is the point of the test: the site-wide page holding the file is a draft the
      * category manager may not read, while their own page naming the same file is one they may.
      * Both halves carry a control, because a search that had simply stopped matching anything at
      * all would pass every refusal here just as well as the clause does.
@@ -1228,9 +1215,7 @@ final class lib_test extends \advanced_testcase {
     /**
      * A row belongs to one context, compared on the stored convention.
      *
-     * This is the guard the listing screen's delete action applies. pages.php is a script, so the
-     * comparison lives here where a test can reach it — an unheld guard is the one that quietly
-     * stops working.
+     * This is the guard the delete action of pages.php applies.
      *
      * @return void
      */
@@ -1305,7 +1290,7 @@ final class lib_test extends \advanced_testcase {
      * category's. Each one sits beside the same page admitted once the double calls the category
      * public, which is what separates the clause from a predicate that has started refusing
      * everything. Whether the category is public comes from \local_page\tests\public_predicate,
-     * because the CI matrix does not install local_unlistedcourses.
+     * because local_unlistedcourses, which gives the real answer, need not be installed.
      *
      * @return void
      */
@@ -1350,13 +1335,11 @@ final class lib_test extends \advanced_testcase {
     /**
      * A category page's embedded file is refused to a visitor while its category is not public.
      *
-     * local_page_pluginfile() cannot take a predicate, so this runs the REAL one: on a site without
-     * local_unlistedcourses — every CI leg — the adapter fails closed, and where the plugin is
-     * installed a fresh category is simply not public. Either way the refusal is the category's, and
-     * the controls say so: the file really is in the area, and the page's own rules admit a visitor
-     * once a double calls the category public. Only the refusal goes through the route itself, for
-     * the reason the og:image tests give — a served file reaches readfile_accel(), which closes
-     * PHPUnit's output buffers. Where local_unlistedcourses is installed, the category is then made
+     * local_page_pluginfile() cannot take a predicate, so this runs the real one: on a site without
+     * local_unlistedcourses the adapter fails closed, and where the plugin is installed a fresh
+     * category is simply not public. Either way the refusal is the category's, and the controls say
+     * so: the file really is in the area, and the page's own rules admit a visitor once a double
+     * calls the category public. Where local_unlistedcourses is installed, the category is then made
      * public for real and the same visitor may read the page through the default predicate, which
      * is the call the route makes.
      *
@@ -1497,7 +1480,7 @@ final class lib_test extends \advanced_testcase {
      * Core calls the callback for the category and, through its own recursion, for the child: the
      * class handles one context at a time (lifecycle_test shows it leaving a child's page live), so a
      * child page found deleted here is core's recursion at work. Each page loses its slug and its short
-     * code, and its files go with the context core deletes. The sibling is the plan's control: still
+     * code, and its files go with the context core deletes. The sibling is the control: still
      * live, still holding its address and its code, and its image and embedded file still served.
      *
      * @return void
@@ -1561,7 +1544,7 @@ final class lib_test extends \advanced_testcase {
      * the new category's address with its embedded file rewritten to the new context, its image is
      * served there, and its short code resolves to the new address. The child category moves under
      * the new parent with a context of its own, so its page stays where it is; the sibling is the
-     * plan's control and is untouched.
+     * control and is untouched.
      *
      * @return void
      */
@@ -1685,9 +1668,9 @@ final class lib_test extends \advanced_testcase {
      * and its image where they were. The error is the one core's own web service gives for this move.
      *
      * The category is the one core's own category_hooks_test builds: real in everything but the list
-     * of plugin callbacks, which names this plugin's alone. Any other plugin declaring the same
-     * callback runs first otherwise — local_dimensions on the fleet stacks, which dies on the root's
-     * missing context with a database error of its own — and the refusal asserted would be theirs.
+     * of plugin callbacks, which names this plugin's alone. Otherwise another installed plugin
+     * declaring the same callback may run first and throw its own error (local_dimensions, for one,
+     * fails on the root's missing context with a database error), and that is what would be asserted.
      *
      * @return void
      */

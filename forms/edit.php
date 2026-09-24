@@ -67,13 +67,10 @@ class pages_edit_product_form extends moodleform {
         $this->pagecontext = $context ?? context_system::instance();
 
         /*
-         * The action is named rather than left to moodleform's default, and the reason is the whole
-         * round trip. With no action given, moodleform posts to strip_querystring($FULLME)
-         * (lib/formslib.php:199) — the query string is thrown away — so a category page posted back
-         * to a bare edit.php, which resolves the SYSTEM context from a URL carrying nothing, and
-         * refused the author on local/page:addpages before the save path ever read the hidden
-         * contextid. Naming the address keeps the context across the POST. For a new site-wide page
-         * it is the same bare edit.php upstream posted to.
+         * The action is named because moodleform's default is strip_querystring($FULLME): a new
+         * category page would post back to a bare edit.php, which resolves the system context and
+         * refuses a category author on local/page:addpages before the hidden contextid is read.
+         * For a new site-wide page the named action is the same bare edit.php.
          */
         parent::__construct(local_page_edit_url($this->pagecontext, (int) $this->callingpage));
     }
@@ -81,8 +78,8 @@ class pages_edit_product_form extends moodleform {
     /**
      * The itemid this page's embedded files are stored under.
      *
-     * A site-wide page shares one area at itemid 0, which is what every stored URL of every page
-     * written before this stage names. A category page uses its own id, so that the file route can
+     * A site-wide page shares one area at itemid 0, as upstream stores it, so the file URLs already
+     * in existing pages keep resolving. A category page uses its own id, so that the file route can
      * authorise a file from the row it belongs to. A category page that has not been saved yet has
      * no id: its files are moved into place right after the insert (see renderer::save_page()).
      *
@@ -284,14 +281,11 @@ class pages_edit_product_form extends moodleform {
         $editoroptions = ['maxfiles' => EDITOR_UNLIMITED_FILES, 'context' => $context];
         if ($context->contextlevel == CONTEXT_COURSECAT) {
             /*
-             * A category page declares trusttext instead of noclean. What lib/form/editor.php does
-             * with the option is accept it into the element's own option list (:59); the code that
-             * READS it is core's file_prepare_standard_editor() / file_postupdate_standard_editor()
-             * (filelib.php:154,225), which this plugin does not use — it prepares and saves the
-             * draft area itself. So the declaration cleans nothing on its own: the pre-edit
-             * cleaning is local_page_editable_content() and the flag is captured by
-             * local_page_content_trust(). What the element does for every editor, whatever is
-             * passed, is set its own 'trusted' option from trusttext_trusted($context) (:98).
+             * A category page declares trusttext instead of noclean. The editor element only stores
+             * the option; core acts on it in file_prepare_standard_editor() and
+             * file_postupdate_standard_editor(), which this plugin does not call. So the declaration
+             * cleans nothing by itself: the pre-edit cleaning is local_page_editable_content() and
+             * the trust flag is local_page_content_trust().
              */
             $editoroptions['trusttext'] = true;
         } else {
@@ -352,11 +346,8 @@ class pages_edit_product_form extends moodleform {
         $mform->setType('metarobots', PARAM_TEXT); // Set the type for meta robots.
         $mform->addHelpButton('metarobots', 'metarobots_description', 'local_page'); // Add help button.
         /*
-         * The head field is offered only on a site-wide page. Every other field a page stores is
-         * body HTML, which clean_text() can judge; a <head> fragment can carry a script element, a
-         * meta refresh or a base tag, and no sanitiser is written for that — so the field stays
-         * with the people who hold local/page:addpages, and a category author is not offered it.
-         * The save path applies the same two conditions.
+         * The head field is offered only on a site-wide page, because no sanitiser exists for head
+         * markup; see local_page_head_html(). The save path applies the same two conditions.
          */
         if (get_config('local_page', 'additionalhead') && $this->pagecontext->contextlevel == CONTEXT_SYSTEM) {
             // Text area for additional HTML head content.
@@ -388,20 +379,16 @@ class pages_edit_product_form extends moodleform {
     /**
      * Server-side validation for the fields whose stored value is a rule rather than text.
      *
-     * Two of this form's fields are read back as instructions rather than displayed, and neither
-     * had any validation at all: a typo in "Required capability" was stored happily and changed who
-     * could see the page, and a friendly URL could be typed over another page's.
+     * Each access level entry is a capability name, negated by a leading "!", read the way
+     * local_page_user_can_view_page() reads it; an unknown capability is refused. The predicate itself
+     * is left alone: it must keep answering for rows stored before this check existed.
      *
-     * The access level is parsed exactly the way local_page_user_can_view_page() parses it, so that
-     * what is refused here is what would have been evaluated there. The read side is deliberately
-     * left alone: it must keep answering for rows saved before this form existed.
+     * The friendly URL is refused when Moodle itself answers on the name (site-wide) or when another
+     * live page of the same context holds it. See \local_page\local\slug::is_reserved() for why stored
+     * rows are never renamed to match.
      *
-     * The friendly URL is refused on two counts: a name Moodle itself answers on, and a name
-     * another live page of the same context already holds. Only the second one is scoped — see
-     * \local_page\local\slug::is_reserved() for why stored rows are never renamed to match.
-     *
-     * The Open Graph image is refused unless its content is the picture its name says. The file
-     * manager accepts a file by its extension alone, and this one is served to anybody.
+     * The Open Graph image is refused unless its content is the image type its name says: the file
+     * manager accepts a file by its extension alone, and this image is served to anybody.
      *
      * @param array $data Submitted values, "fieldname" => value
      * @param array $files Uploaded files, unused here
@@ -440,20 +427,18 @@ class pages_edit_product_form extends moodleform {
                 $errors['accesslevel'] = get_string('accesslevel_unknowncapability', 'local_page', $unknown);
             } else if ($entries > 0 && $positives === 0) {
                 /*
-                 * A list of negations only grants the page to everyone. The predicate starts at
-                 * "no access" and a negated entry flips that to "access" for anyone who does NOT
-                 * hold the capability — which is every anonymous visitor, since administrators were
-                 * already admitted further up. Refusing it here is what closes that hole; the
-                 * predicate keeps reading already-stored rows as it always did.
+                 * A list of negations only grants the page to everyone: the predicate starts at
+                 * "no access" and a negated entry flips it to "access" for anyone who does NOT hold
+                 * the capability, which includes every anonymous visitor.
                  */
                 $errors['accesslevel'] = get_string('accesslevel_negationonly', 'local_page');
             }
         }
 
         /*
-         * Compared lower-cased and trimmed because that is the form the renderer stores. The
-         * context decides both refusals: a slug is reserved site-wide, but it is only "taken"
-         * within the scope that owns it, so two categories may each have a "contato".
+         * Compared lower-cased and trimmed because that is the form the renderer stores. A slug is
+         * reserved site-wide, but it is only "taken" within the context that owns it, so two
+         * categories may each have a "contact".
          */
         $menuname = \core_text::strtolower(trim((string) ($data['menuname'] ?? '')));
         $contextid = (int) ($data['contextid'] ?? 0);

@@ -33,9 +33,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 /**
  * Tests for opengraph and the image it advertises.
  *
- * Every assertion is made on the RENDERED markup, and on the property attribute exactly: a tag
- * spelled name="og:title" is not an Open Graph tag, and a scraper ignores it, so a test reading the
- * exported values alone would pass over the very defect upstream shipped.
+ * The tag assertions read the rendered markup and match the property attribute exactly: the Open
+ * Graph protocol defines its tags as property metas, so a tag spelled name="og:title" is not one,
+ * which the exported values alone cannot show.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -118,9 +118,8 @@ final class opengraph_test extends \advanced_testcase {
     /**
      * A name typed with an entity in it is shown as it was typed.
      *
-     * format_string() with escape off leaves an existing entity alone, so the plain spelling IS what
-     * the author typed and the template escapes it once, exactly as upstream's html_writer did: a
-     * reader of the preview sees the characters that were typed, entity and all.
+     * format_string() with escape off leaves an existing entity alone, so the plain spelling is what
+     * the author typed and the template escapes it once: a link preview shows the entity as typed.
      *
      * @return void
      */
@@ -202,7 +201,7 @@ final class opengraph_test extends \advanced_testcase {
      * The og:locale follows the language the page is being rendered in.
      *
      * $SESSION->forcelang is what current_language() reads first; force_current_language() would
-     * refuse pt_br on a test site without that language pack, which is every CI leg.
+     * ignore pt_br on a test site without that language pack installed.
      *
      * @return void
      */

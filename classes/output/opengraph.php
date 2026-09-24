@@ -35,19 +35,16 @@ use local_page\local\scope;
  * document head. Nothing about a page the viewer may not read is ever built, so nothing about it can
  * reach the head.
  *
- * The TEMPLATE renders the Open Graph metas only — RDFa property metas, which the mustache lint
- * accepts as body content. The name metas (description, keywords, author, robots) and the canonical
- * link are invalid as body content, so the lint rejects them in a template; the callback writes those
- * as literal strings instead, the way core's own standard_head_html() writes its metas. This object
- * holds them all so that one decision feeds both halves.
+ * The template renders the Open Graph property metas only; the name metas (description, keywords,
+ * author, robots) and the canonical link are written by the hook callback as literal strings
+ * ({@see \local_page\local\hook\output\before_standard_head_html_generation::callback()} says why).
+ * This object holds them all so that one decision feeds both halves.
  *
- * Every value is held in the PLAIN spelling — format_string() with escape off — and escaped exactly
- * once where it is written: by the template's double stashes, or by s() in the callback. The fixture
- * that proves it is a page name carrying a bare ampersand.
+ * Every value is held in the plain spelling (format_string() with escape off) and escaped exactly
+ * once where it is written: by the template's double stashes, or by s() in the callback.
  *
- * There is ONE og:title: the page's meta title when it has one, its name otherwise. Upstream emitted
- * the meta title as a name meta called og:title — which is no Open Graph tag at all — and the page
- * name again as the real property, so a scraper saw the name and never the title written for it.
+ * There is one og:title: the page's meta title when it has one, its name otherwise. A second
+ * og:title would leave a scraper free to pick the one not written for it.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -130,11 +127,11 @@ class opengraph implements \core\output\named_templatable, \core\output\renderab
     /**
      * The robots directive of a page, or null for none.
      *
-     * The page's own directive when its author wrote one. Otherwise a CATEGORY page is marked noindex
+     * The page's own directive when its author wrote one. Otherwise a category page is marked noindex
      * unless the site is open to search engines ($CFG->opentowebcrawlers, "Open to search engines"
      * under Site security settings): a category page is there so that a shared link unfurls, not so
-     * that a search engine lists it, and that is the site's decision, not each author's. A SITE-WIDE
-     * page without a directive gets none, which is what upstream did.
+     * that a search engine lists it, and that is the site's decision, not each author's. A site-wide
+     * page without a directive gets none.
      *
      * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage}
      * @return string|null The directive, or null

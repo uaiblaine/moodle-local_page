@@ -27,7 +27,7 @@ namespace local_page\local;
 /**
  * The one place a custom page's addresses are spelled.
  *
- * A category page has three addresses and a site-wide page keeps upstream's:
+ * A category page has three addresses:
  *
  * - The script, /local/page/index.php?category=N&page=slug (or &id=M). It always answers, router or
  *   no router, and it is what every address falls back to.
@@ -41,20 +41,19 @@ namespace local_page\local;
  *   which is longer than the script's own address, so {@see share()} answers page() and mints
  *   nothing.
  *
- * A site-wide page is answered where upstream answers it, ?id=N and the ?menuname= form; this class
- * never spells the wwwroot/slug form for it, because that address exists only where the web server
- * rewrites it, and upstream emits it only when the request arrived through that rewrite.
+ * A site-wide page is addressed as /local/page/index.php?id=N or ?menuname=slug. {@see page()} never
+ * spells the wwwroot/slug form for it, because that address exists only where the web server
+ * rewrites it; {@see legacy_menuname()} is used only for a request that arrived with ?menuname=,
+ * which is what that rewrite produces.
  *
  * The router gate is $CFG->routerconfigured, the flag core's own URL builders read
  * (\core\url::routed_path()): the administrator's word that the web server hands unknown paths to
- * r.php. Nothing here ever sets $CFG->urlrewriteclass — that is one global slot, with no chaining,
- * and a plugin that claimed it would evict whatever the site put there.
+ * r.php. Nothing here sets $CFG->urlrewriteclass: that is one global slot with no chaining, and a
+ * plugin that claimed it would evict whatever the site put there.
  *
- * Codes are drawn by core's own manager, \core\shortlink::create_public_shortlink(), which already
- * writes a public row (userid 0) for a component, a link type and an identifier and keeps a public
- * code unique across the whole table. What it cannot say is "one code per page", so this class
- * asks {@see existing_code()} first and reads the oldest row back after minting: two editors saving
- * the same page at once leave two rows and one address.
+ * Codes are drawn by core's \core\shortlink::create_public_shortlink(), which writes a public row
+ * (userid 0) and keeps a public code unique across the whole table, but cannot guarantee one code per
+ * page; {@see share()} reuses an existing code and {@see mint()} reads the oldest row back.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -101,7 +100,7 @@ final class links {
     }
 
     /**
-     * Upstream's address of a page, by id.
+     * The script's address of a page, by id; what {@see page()} answers for a site-wide page.
      *
      * @param int $pageid Page id
      * @return \moodle_url
@@ -111,10 +110,10 @@ final class links {
     }
 
     /**
-     * Upstream's canonical for a site-wide page reached through its friendly URL: wwwroot/slug.
+     * The canonical of a site-wide page requested by its friendly URL: wwwroot/slug.
      *
-     * Spelled exactly as upstream spelled it, because it is only ever emitted for a request that
-     * arrived through the web server rewrite, which is what makes the address real.
+     * Only emitted for a request that named ?menuname=, which is what the web server rewrite produces;
+     * without that rewrite the address answers nothing.
      *
      * @param string $menuname The page's site-wide friendly URL
      * @return \moodle_url
@@ -148,7 +147,7 @@ final class links {
      *
      * A category page is addressed by its category and its slug; one without a usable slug — which
      * cannot be stored since every save names the page, but a row edited by hand could hold one —
-     * by its category and its id, which the script answers. A site-wide page keeps upstream's ?id=.
+     * by its category and its id, which the script answers. A site-wide page is addressed by ?id=.
      *
      * @param object $row Row from {local_page}, or a {@see \local_page\custompage}
      * @return \moodle_url
@@ -175,8 +174,8 @@ final class links {
      * The public short address of a category page: the one to share.
      *
      * The page's code, minted on the first call; the page's own address while the router is not
-     * configured, and for a site-wide page always, with nothing minted. Site-wide pages have the
-     * friendly-URL mechanism upstream gave them and are out of scope here.
+     * configured, and for a site-wide page always, with nothing minted: site-wide pages have their own
+     * friendly URL.
      *
      * Called from the save path only. A GET never mints: the listing reads {@see existing_share()}.
      *
@@ -270,7 +269,7 @@ final class links {
      * Mint a public short code for a page, through core's own manager.
      *
      * Core draws codes until it finds one no row of the table holds, and inserts it inside a
-     * delegated transaction of its own; the page's OLDEST row is then read back and returned, so two
+     * delegated transaction of its own; the page's oldest row is then read back and returned, so two
      * saves of the same page racing each other leave two rows and one address.
      *
      * There is deliberately no retry around the call. The one failure left is a concurrent insert of

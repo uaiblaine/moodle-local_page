@@ -27,15 +27,13 @@ namespace local_page\local;
 /**
  * Normalisation and uniqueness for the menuname column.
  *
- * Upstream treats menuname as a free-text field: nothing stops two live pages carrying the same
- * slug, and nothing releases a slug when a page is deleted. Both matter because the slug is a URL.
- * custompage::load_by_menuname() resolves a duplicate with ORDER BY id DESC and IGNORE_MULTIPLE, so
- * the page a visitor reaches is whichever was saved last — an editor can take over somebody else's
- * address by typing it, without any warning, and the previous owner's page simply stops answering.
+ * The slug is a URL, so it is unique among the live rows of one context, and deleting a page
+ * mangles its slug so the address is released. custompage::load_by_menuname() resolves a duplicate
+ * with ORDER BY id DESC and IGNORE_MULTIPLE, so without the uniqueness rule an editor could take
+ * over another page's address just by typing it.
  *
- * From this fork onwards a slug is unique among rows that are not deleted, and deleting a page
- * mangles its slug so the address is released. A restored page therefore needs a new slug; that is
- * deliberate, because the alternative is a delete that keeps holding an address nobody can see.
+ * A restored page therefore needs a new slug; that is deliberate, because the alternative is a
+ * deleted page that keeps holding an address nobody can see.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -49,7 +47,7 @@ final class slug {
      * @var array Slugs Moodle itself answers on, which a page may therefore not take.
      *
      * Source: the top-level entries of the Moodle 5.2 webroot — every directory and every script
-     * under public/ — plus the segments the 5.1+ routing engine reserves under the site root
+     * under public/ — plus the path segments core's routing engine uses in its own routes
      * (p, s, esm, check, templates, api). A friendly URL is served by rewriting the site root, so
      * a page holding one of these names either never answers (the real path wins) or hides part
      * of Moodle (the rewrite wins). Neither is something an author can debug from the form.
@@ -83,7 +81,7 @@ final class slug {
     /**
      * Whether a slug is one Moodle answers on itself.
      *
-     * Only the form consults this. normalise_all() deliberately does NOT rename a legacy row whose
+     * Only the form consults this. normalise_all() deliberately does not rename a legacy row whose
      * slug turns out to be reserved: that row has been answering at its address for as long as the
      * site's rewrite rules have allowed it to, and renaming it at upgrade time would break a
      * published URL to fix a URL that may never have been broken. New ones are refused on the way
@@ -114,13 +112,15 @@ final class slug {
      * 1. every value is trimmed and lower-cased, and truncated to the column width;
      * 2. a live row with an empty slug is given page-<id>, so every page is addressable;
      * 3. a deleted row is given the deleted_name() form, releasing the address it was holding;
-     * 4. among live rows OF ONE CONTEXT sharing a slug the lowest id keeps it and the others gain
-     *    -<id>.
+     * 4. among live rows of one context sharing a slug the lowest id keeps it and the others move to
+     *    the first free form of -<id>, -<id>-2, -<id>-3 and so on.
      *
-     * Pass 4 runs in id order and records what it has handed out as it goes, so a suffixed value
-     * that happens to collide with a later row's slug pushes that row along too rather than
-     * creating a fresh duplicate. It groups by contextid because uniqueness is per context from
-     * this stage on: two categories may each own a page called "contato" and neither has to move.
+     * Pass 4 runs in id order. A form is free when no row has claimed it earlier in the pass and no
+     * other live row of the context holds it, so a moved page never takes a later page's slug and
+     * never lands on a value it would have to leave on the next run: that is what makes the routine
+     * idempotent. unique_in_context() applies the same rule against the stored rows. The pass groups
+     * by contextid because uniqueness is per context: two categories may each own a page called
+     * "contato" and neither has to move.
      *
      * A slug that is_reserved() would refuse is left exactly as it is, deliberately — see that
      * method for why a rename at upgrade time is the more expensive mistake.
@@ -148,6 +148,13 @@ final class slug {
         }
 
         // Pass 4: uniqueness among the rows that are still live, within each context.
+        $held = [];
+        foreach ($rows as $row) {
+            if ((int) $row->deleted === 0) {
+                $held[(int) ($row->contextid ?? 0)][$wanted[(int) $row->id]] = true;
+            }
+        }
+
         $taken = [];
         foreach ($rows as $row) {
             if ((int) $row->deleted !== 0) {
@@ -156,7 +163,11 @@ final class slug {
             $id = (int) $row->id;
             $scope = (int) ($row->contextid ?? 0);
             if (isset($taken[$scope][$wanted[$id]])) {
-                $wanted[$id] = self::suffixed($wanted[$id], $id);
+                $wanted[$id] = self::first_free(
+                    $wanted[$id],
+                    $id,
+                    static fn (string $candidate): bool => isset($taken[$scope][$candidate]) || isset($held[$scope][$candidate])
+                );
             }
             $taken[$scope][$wanted[$id]] = true;
         }
@@ -207,7 +218,7 @@ final class slug {
      * Deleted rows are ignored on purpose: their slug has been mangled by deleted_name() and the
      * address they used to hold is free again.
      *
-     * Uniqueness is PER CONTEXT, so the answer depends on which scope is asking: two categories
+     * Uniqueness is per context, so the answer depends on which scope is asking: two categories
      * may each own "contato", and neither collides with a site-wide page of that name. The
      * parameter carries the stored convention, 0 for the system scope — see
      * {@see \local_page\local\scope} for why the column reads that way.
@@ -239,10 +250,10 @@ final class slug {
     /**
      * The slug a live page may carry in a context it is arriving in.
      *
-     * Its own, when no other live page of that context holds it. Otherwise the page gains its id,
-     * which is how normalise_all() settles a duplicate, and the page already there keeps its
-     * address. Should that suffixed form be taken as well — only a slug typed by hand can hold it —
-     * a counter follows the id until the value is free, so the result is never a duplicate.
+     * Its own, when no other live page of that context holds it. Otherwise the page already there
+     * keeps its address and the arriving page moves to the first free form of -<id>, -<id>-2,
+     * -<id>-3 and so on, which is how normalise_all() settles a duplicate; the result is never a
+     * duplicate.
      *
      * Nothing is written here, and the answer is only as good as the moment it was read: the caller
      * holds the lock the editor's save takes, so no save can take the value before it is stored.
@@ -257,31 +268,40 @@ final class slug {
             return $menuname;
         }
 
-        $base = \core_text::strtolower(trim($menuname));
-        $candidate = self::suffixed($base, $id);
-        for ($counter = 2; self::is_taken($candidate, $id, $contextid); $counter++) {
-            $suffix = '-' . $id . '-' . $counter;
-            $candidate = self::stem($base, $suffix) . $suffix;
-        }
-
-        return $candidate;
+        return self::first_free(
+            \core_text::strtolower(trim($menuname)),
+            $id,
+            static fn (string $candidate): bool => self::is_taken($candidate, $id, $contextid)
+        );
     }
 
     /**
-     * The slug a duplicate is moved to: the original with -<id> appended.
+     * The first free slug for a page whose own is taken: -<id>, then -<id>-2, -<id>-3 and so on.
      *
-     * @param string $menuname Slug that was already taken
+     * The single collision rule of this class, shared by normalise_all() and unique_in_context(),
+     * which differ only in how they tell whether a candidate is free. A slug already ending in
+     * -<id> is not given a second copy of the id: page-12 of page 12 moves to page-12-2. Each
+     * candidate is shortened before its suffix so that it still fits the column.
+     *
+     * @param string $menuname Slug that is taken, as stored
      * @param int $id Page id of the row being moved
+     * @param callable $istaken Answers whether a candidate slug is held by another live page of the context
      * @return string
      */
-    private static function suffixed(string $menuname, int $id): string {
-        $suffix = '-' . $id;
-
-        if (self::ends_with($menuname, $suffix)) {
-            return self::truncate($menuname);
+    private static function first_free(string $menuname, int $id, callable $istaken): string {
+        $idsuffix = '-' . $id;
+        $root = $menuname;
+        if (self::ends_with($root, $idsuffix)) {
+            $root = \core_text::substr($root, 0, \core_text::strlen($root) - \core_text::strlen($idsuffix));
         }
 
-        return self::stem($menuname, $suffix) . $suffix;
+        $candidate = self::stem($root, $idsuffix) . $idsuffix;
+        for ($counter = 2; $istaken($candidate); $counter++) {
+            $suffix = $idsuffix . '-' . $counter;
+            $candidate = self::stem($root, $suffix) . $suffix;
+        }
+
+        return $candidate;
     }
 
     /**

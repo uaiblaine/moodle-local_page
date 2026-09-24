@@ -36,7 +36,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
  * this test keeps that answer next to the plugin, where a new column would be added.
  *
  * The rows the plugin writes into core's {shortlink} table are not personal data either: every one
- * is a PUBLIC code, written with userid 0 by \local_page\local\links::share(), so it belongs to
+ * is a public code, written with userid 0 by \local_page\local\links::share(), so it belongs to
  * nobody, and core's own table is core's to declare. Nor is metaauthor, which is published content:
  * the text an editor types for the page's author meta tag, tied to no account.
  *
