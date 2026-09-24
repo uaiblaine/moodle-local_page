@@ -62,3 +62,31 @@ Feature: Authoring the custom pages that belong to a course category
     When I visit the editor of a new page of the category "CAT1"
     Then "Username" "field" should exist
     And I should not see "Title of the Page"
+
+  Scenario: A guest opening the editor meets the login page whether or not the category exists
+    # A guest session passes a plain login check, so without its own refusal a guest would reach the
+    # lookups and meet the same two different answers a visitor was spared.
+    Given the following config values are set as admin:
+      | guestloginbutton | 1 |
+    And I log in as "guest"
+    When I visit "/local/page/edit.php?category=999999"
+    Then "Username" "field" should exist
+    When I visit the editor of a new page of the category "CAT1"
+    Then "Username" "field" should exist
+    And I should not see "Title of the Page"
+
+  Scenario: The people who may edit a page see its status beside its title, and its readers do not
+    Given the following "local_page > pages" exist:
+      | pagename       | menuname | category | status |
+      | Alpha handbook | handbook | CAT1     | live   |
+      | Alpha drafts   | drafts   | CAT1     | draft  |
+    When I log in as "manager1"
+    And I visit the custom page "handbook" of the category "CAT1"
+    Then I should see "Live" in the ".page-header-headings" "css_element"
+    When I visit the custom page "drafts" of the category "CAT1"
+    Then I should see "Draft" in the ".page-header-headings" "css_element"
+    # A manager of another category reads the live page as anybody logged in does: its title alone.
+    When I log in as "manager2"
+    And I visit the custom page "handbook" of the category "CAT1"
+    Then I should see "Alpha handbook" in the ".page-header-headings" "css_element"
+    And I should not see "Live" in the ".page-header-headings" "css_element"

@@ -71,9 +71,14 @@ final class slug_test extends \advanced_testcase {
     /**
      * A slug is taken by a live page, except for that page itself, and an empty slug never is.
      *
+     * A deleted row is ignored by the query itself, not only because deleted_name() renames it: the
+     * row below keeps its slug unchanged, and the same row counts again once it is not deleted.
+     *
      * @return void
      */
     public function test_is_taken_counts_only_pages_that_are_not_deleted(): void {
+        global $DB;
+
         $this->resetAfterTest();
 
         $page = $this->pages()->create_page(['menuname' => 'about']);
@@ -95,6 +100,14 @@ final class slug_test extends \advanced_testcase {
 
         // A slug nobody holds is free.
         $this->assertFalse(slug::is_taken('nobody-has-this'));
+
+        // A deleted row still holding its slug does not take it.
+        $retired = $this->pages()->create_page(['menuname' => 'retired', 'deleted' => 1]);
+        $this->assertFalse(slug::is_taken('retired'));
+
+        // Control: the very same row takes it once it is not deleted.
+        $DB->set_field('local_page', 'deleted', 0, ['id' => $retired->id]);
+        $this->assertTrue(slug::is_taken('retired'));
     }
 
     /**

@@ -91,8 +91,8 @@
             <div class="row w-100 g-0 mt-2 border-top pt-3">
                 {{! View button }}
                 <div class="col me-2">
-                    <a href="{{{viewurl}}}" target="_blank" class="m-0 btn btn-info w-100">
-                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                    <a href="{{{viewurl}}}" target="_blank" class="m-0 btn btn-info w-100" aria-label="{{#str}}view, moodle{{/str}}" title="{{#str}}view, moodle{{/str}}">
+                        <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
                     </a>
                 </div>
                 {{! Delete button }}
@@ -100,8 +100,10 @@
                     <a href="#" class="m-0 btn btn-danger w-100" 
                        data-bs-toggle="modal" 
                        data-bs-target="#deleteConfirmModal{{id}}" 
-                       role="button">
-                        <i class="fa fa-trash"></i>
+                       role="button"
+                       aria-label="{{#str}}delete, local_page{{/str}}"
+                       title="{{#str}}delete, local_page{{/str}}">
+                        <i class="fa fa-trash" aria-hidden="true"></i>
                     </a>
                 </div>
             </div>

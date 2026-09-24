@@ -29,7 +29,6 @@ use renderable;
 use renderer_base;
 use templatable;
 use stdClass;
-use moodle_url;
 
 /**
  * Class representing data for pages list template

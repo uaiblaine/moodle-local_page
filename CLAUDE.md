@@ -137,7 +137,8 @@ classes/local/hook/output/before_standard_head_html_generation.php
 classes/url_rewriter.php    Friendly-URL rewriting (pairs with .htaccess).
 classes/output/             page_card, page_content, pages_list renderables; opengraph, the head
                             tags of a page (Open Graph, SEO name metas, robots, canonical).
-templates/                  Their Mustache counterparts; opengraph.mustache is property metas only.
+templates/                  Their Mustache counterparts; opengraph.mustache is property metas only;
+                            status_badge.mustache is the status an editor sees in a page's heading.
 db/                         install.xml, upgrade.php, upgradelib.php (the frozen code the upgrade
                             steps call), access.php, uninstall.php, hooks.php.
 .htaccess            SHIPS in the release zip — it is the friendly-URL feature,
@@ -195,7 +196,9 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   goes through core's `\core\shortlink::create_public_shortlink()` with no retry around it: core's
   delegated transaction is left undisposed when its insert fails, and catching that on PostgreSQL would
   poison the rest of the request. `pages.php` forgets a page's codes on delete, `db/uninstall.php` on
-  uninstall; core deletes nothing from `{shortlink}`.
+  uninstall; core deletes nothing from `{shortlink}`. That is all `db/uninstall.php` does: the
+  plugin's files need no loop there, because `uninstall_plugin()` calls
+  `file_storage::delete_component_files()` after the plugin's own function, in every context.
 - **The legacy script's two redirects sit on opposite sides of the rules, on purpose.** The slug form
   (`request::category(..., legacy: true)`) answers a 303 to the route BEFORE any lookup — the same
   redirect for every id and slug, so it tells nobody anything. The `?id=` form (`request::legacy()`)
@@ -243,8 +246,19 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   `2rem`. Do not "fix" it towards Bootstrap's stock scale.
 - **Every `bg-*` on a badge carries a text utility.** Bootstrap 5 defaults badge
   text to white, so `bg-warning` measured 1.95:1 against the 4.5:1 AA floor
-  before the pairing was added. Both the PHP (`classes/output/page_card.php`)
-  and the Mustache (`templates/page_card.mustache`) emit badges — fix both.
+  before the pairing was added. Three places emit badges — the PHP
+  (`classes/output/page_card.php`), the card's Mustache (`templates/page_card.mustache`)
+  and `local_page_status_badge()` in `lib.php` (`templates/status_badge.mustache`), which
+  pairs each `bg-*-subtle` with its `text-*-emphasis` — fix all three.
+- **The page heading is built with formatting OFF.** `local_page_render_view()` formats the
+  page name with `format_string()` itself, appends the status badge for somebody who may edit
+  the page, and calls `set_heading($heading, false, false)`, because a formatted heading would
+  escape the badge's markup. Anything else appended there has to be escaped by whoever builds it.
+  Upstream drew the status from `styles.css` with `h1.page-header-headings::before`; on 5.2 the
+  class sits on the div around the heading (`lib/templates/context_header.mustache`), so it never
+  matched, and it was English in every language. `tests/styles_test.php` keeps text out of the
+  sheet. On 5.2 the theme sheet serves this plugin's CSS BEFORE Bootstrap's `.badge`, so a rule
+  sizing a badge needs two classes (`.badge.local-page-status-badge`) to win.
 - **Dark mode is `:root[data-bs-theme="dark"]` and nothing else.** Moodle 5.2
   emits no `.theme-dark`, so a rule keyed on it matches nothing. `styles.css`
   reads `--bs-*` tokens with literal fallbacks; never reintroduce a hard-coded
@@ -297,7 +311,12 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   MUST_EXIST lookup, so an anonymous request reaching it answered an exception for a missing category
   id and the login page for an existing one. `require_login()` with no course sets no course or
   context on `$PAGE`, which is what keeps `set_category_by_id()` the first `set_*()` call after it.
-  The last scenario of `tests/behat/category_pages.feature` holds the order.
+  It is `require_login(null, false)` followed by a refusal of the guest account (the login page, with
+  `wantsurl`, which is what `require_login()` gives a visitor): a guest session passes a plain
+  `require_login()`, and its default argument even logs a visitor in as the guest where
+  `autologinguests` is on, so a guest would otherwise reach the lookups and meet the same oracle.
+  Two scenarios of `tests/behat/category_pages.feature` hold the order, one for a visitor and one
+  for a guest; no unit test can, because `edit.php` is a script.
 - **A new `lib.php` callback is invisible on the web until the plugin function
   cache is rebuilt.** `get_plugins_with_function()` — which is how core finds
   `local_page_extend_navigation_category_settings()` — is memoised in MUC, so the
@@ -394,9 +413,11 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   `mdl behat m502 @local_page`, all scenarios deliberately non-JavaScript.
   `tests/behat/category_pages.feature` walks a category manager from the
   category page to the pages screen and back, which is the one path no unit
-  test can assert because it is made of links, and sends a visitor to the
-  editor of a category that does not exist and of one that does (the login
-  page both times). `tests/behat/anonymous_viewer.feature`
+  test can assert because it is made of links, sends a visitor and then a
+  guest to the editor of a category that does not exist and of one that does
+  (the login page every time), and shows the status badge in a page's heading
+  to the category's manager and not to a manager of another category.
+  `tests/behat/anonymous_viewer.feature`
   runs with `forcelogin` switched on in its Background — the production state,
   stated rather than assumed — and holds three things: a visitor still reads a
   site-wide page, a visitor asking for a category page meets the login page and
@@ -436,12 +457,15 @@ took the stacked branches `stage-0-fleet-onboarding` (`90e75b3`) ->
 stay on the remote as the record of the series; `stage-2` and `stage-3` carry the
 broken upgrade order fixed in stage 4, so never deploy one of them to a real site.
 
-Two branches follow it:
+Three branches follow it:
 
 - `comments-audit`: the comment audit (`89440e5`, comment lines only) and the
   five code findings it raised, fixed as `1.0.10+uai.10` (two upgrade steps, the
   frozen `db/upgradelib.php`, the shared slug collision rule, the editor's
-  login-before-lookup order). It is the tip of the fork.
+  login-before-lookup order).
+- `audit-improvements`: the improvement findings the audit left open, as `1.0.10+uai.11` (the
+  guest refusal in the editor, the localised status badge, the card's accessible names, the
+  negation-only message, dead code). It is the tip of the fork.
 - `upstream-security-fixes` (on `cf3df54`, upstream's own `main`, unchanged since
   the fork): the seven security fixes worth offering upstream, one commit each,
   release `v1.0.11` unreleased, green on the legs upstream's own `ci.yml` runs.

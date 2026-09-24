@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Uninstall hook: remove files stored in system context (not purged automatically).
+ * Uninstall hook: removes the rows this plugin wrote to core's shortlink table.
  *
  * @package     local_page
  * @author      Marcin Czaja RoseaThemes
@@ -24,42 +24,18 @@
  */
 
 /**
- * Cleans up file areas when this plugin is removed.
+ * Removes this plugin's rows from core's shortlink table when the plugin is removed.
  *
- * A page's files live in the page's own context, so every context named by a row is visited, plus
- * the system context, where a stored contextid of 0 resolves, even when the table holds no rows.
- *
- * It also removes the plugin's rows from core's shortlink table, which core never cleans: a /p/
- * code left behind would point core at a handler that no longer exists.
+ * Core never deletes from that table, and a /p/ code left behind would point core at a handler that
+ * no longer exists. The plugin's files need nothing here: uninstall_plugin() calls
+ * file_storage::delete_component_files() after this function returns, and that deletes every file
+ * the component owns, in every context.
  *
  * @return bool
  */
 function xmldb_local_page_uninstall() {
     global $DB;
 
-    $fs = get_file_storage();
-    $systemcontextid = (int) context_system::instance()->id;
-
-    $contextids = [$systemcontextid => $systemcontextid];
-
-    $dbman = $DB->get_manager();
-    $table = new xmldb_table('local_page');
-    $field = new xmldb_field('contextid');
-    if ($dbman->table_exists($table) && $dbman->field_exists($table, $field)) {
-        // A plugin uninstalled before this column was added has nothing else to visit.
-        $stored = $DB->get_fieldset_sql('SELECT DISTINCT contextid FROM {local_page}');
-        foreach ($stored as $contextid) {
-            $contextid = (int) $contextid === 0 ? $systemcontextid : (int) $contextid;
-            $contextids[$contextid] = $contextid;
-        }
-    }
-
-    foreach ($contextids as $contextid) {
-        $fs->delete_area_files($contextid, 'local_page', 'pagecontent');
-        $fs->delete_area_files($contextid, 'local_page', 'ogimage');
-    }
-
-    // The public short codes minted for category pages: core never deletes from its shortlink table.
     $DB->delete_records('shortlink', ['component' => 'local_page']);
 
     return true;

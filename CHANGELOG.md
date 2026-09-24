@@ -1,5 +1,58 @@
 # CHANGELOG
 
+## [1.0.10+uai.11] - 2026-09-24
+
+The improvements the comment audit left open: one oracle closed for the guest account, the page's
+status shown in the viewer's language, accessible names on the listing's icon buttons, a corrected
+error message, and dead code removed. No table, column or upgrade step changes; the upgrade the
+version bump asks for purges the caches, which a site caching its templates needs for the new one.
+
+### Fixed
+- **A guest could still tell which category ids exist through the editor.** `edit.php` checked the
+  login before any lookup, but a guest session passes that check (the guest login button, or
+  `autologinguests`, which logged a visitor in as the guest on the spot), so a guest opening
+  `edit.php?category=<id>` met an error for an id that does not exist and a refusal for one that does.
+  The editor now refuses the guest account before any lookup with the answer a visitor who is not
+  logged in gets, the login page, and no longer logs a visitor in as the guest.
+- **The page's status was never shown on Moodle 5.2, and could only ever say it in English.** Upstream
+  drew *Live*, *Draft* or *Archived* above the heading from `styles.css`, on a selector
+  (`h1.page-header-headings`) that names no element Moodle 5.2 renders: the class sits on the block
+  around the heading. The status is now a badge inside the heading, built from the plugin's own status
+  strings, for whoever may edit the page; everybody else reads the title alone, as before. The page
+  name is still formatted exactly once.
+- **The error for an access level made only of negations offered a remedy that does not clear it.**
+  It suggested setting "Only logged in" to Yes, but the editor refuses such a list whatever that field
+  says, which is deliberate. The message now names the one remedy, a positive capability (English and
+  Brazilian Portuguese).
+- **The listing's view and delete buttons had no accessible name.** Each shows only an icon, so a screen
+  reader announced a bare link; each now carries an `aria-label` and a `title` (*View* and *Remove*).
+
+### Changed
+- `db/uninstall.php` removes only the plugin's rows from core's shortlink table. Its loop over every
+  context deleting the two file areas duplicated core: `uninstall_plugin()` calls
+  `file_storage::delete_component_files()` after the plugin's own uninstall function, which deletes
+  every file of the component, in every context. The file's description, which said the files were not
+  purged automatically, said the opposite of what core does.
+- `local_page_render_view()` no longer asks the database whether the page exists before adding its
+  `local-page-id-<id>` body class: a viewer allowed to read the page already implies a stored row that
+  is not deleted.
+
+### Removed
+- Dead code: the unused `$download` and `$title` in `edit.php`; the list of every page (one query per
+  editor load) and the list of theme layouts that `forms/edit.php` built and never used; an unused
+  import in `classes/output/pages_list.php`; the status text rules in `styles.css`.
+
+### Added
+- `templates/status_badge.mustache` and `local_page_status_badge()` in `lib.php`.
+- Tests: `tests/status_badge_test.php` (the heading for an editor and for a reader, each status, the
+  site's own wording of the strings), `tests/styles_test.php` (the stylesheet draws no text), a deleted
+  row in `test_is_taken_counts_only_pages_that_are_not_deleted`, a page whose context is gone in
+  `tests/shortlink_handler_test.php`, the accessible names in `tests/output/pages_list_test.php`, and
+  two Behat scenarios in `tests/behat/category_pages.feature`: a guest opening the editor, and the
+  badge seen by a category's manager and not by a manager of another category.
+- Gates in `mutations/gates.conf` for the badge's strings and its capability check, the two
+  accessible names, the deleted filter of `slug::is_taken()` and the handler's missing context.
+
 ## [1.0.10+uai.10] - 2026-09-23
 
 Five fixes found in review of the category-pages series, and two upgrade steps. `db/install.xml` is

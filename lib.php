@@ -473,7 +473,7 @@ function local_page_head_html(object $page): string {
  * @throws \coding_exception When the answer is a redirect, which has nothing to render
  */
 function local_page_render_view(\local_page\local\request $answer): string {
-    global $DB, $OUTPUT, $PAGE;
+    global $OUTPUT, $PAGE;
 
     if ($answer->page === null) {
         throw new \coding_exception('A redirect answer has no page to render.');
@@ -503,19 +503,27 @@ function local_page_render_view(\local_page\local\request $answer): string {
     } else {
         $PAGE->set_title($custompage->pagename);
         $statusbadge = $custompage->status;
+        $caneditpage = has_capability(\local_page\local\scope::capability($context), $context);
 
         if ($custompage->hidetitle == 'no') {
-            $PAGE->set_heading($custompage->pagename);
+            /*
+             * Somebody who may edit the page sees its status beside its name. The name is formatted
+             * here exactly as set_heading() formats a heading by default, and formatting is then off
+             * for the whole heading, so that the badge's markup reaches the page as it was rendered.
+             */
+            $heading = format_string($custompage->pagename, true, ['context' => $context]);
+            if ($caneditpage) {
+                $heading .= ' ' . local_page_status_badge((string) $statusbadge);
+            }
+            $PAGE->set_heading($heading, false, false);
         }
 
-        if (has_capability(\local_page\local\scope::capability($context), $context)) {
+        if ($caneditpage) {
             $PAGE->add_body_class('local-page-status-' . $statusbadge);
         }
 
-        $bodyid = (int) $custompage->id;
-        if ($bodyid > 0 && $DB->record_exists('local_page', ['id' => $bodyid, 'deleted' => 0])) {
-            $PAGE->add_body_class('local-page-id-' . $bodyid);
-        }
+        // The viewer may read the page, so the row is stored and not deleted (local_page_user_can_view_page()).
+        $PAGE->add_body_class('local-page-id-' . (int) $custompage->id);
     }
 
     $PAGE->set_pagetype('local-page-id-' . max(0, (int) $custompage->id));
@@ -550,6 +558,36 @@ function local_page_render_view(\local_page\local\request $answer): string {
     \local_page\output\opengraph::set($canview ? \local_page\output\opengraph::for_page($custompage, $canonicalurl) : null);
 
     return $body;
+}
+
+/**
+ * The badge naming a page's status, as its editors see it beside the page's heading.
+ *
+ * The text is the plugin's own status string, so it follows the viewer's language and the site's
+ * language customisation. Each arm names its string id literally, and a status the plugin does not
+ * know renders no badge.
+ *
+ * @param string $status The page's stored status: live, draft or archived
+ * @return string The badge HTML, or an empty string for an unknown status
+ */
+function local_page_status_badge(string $status): string {
+    global $OUTPUT;
+
+    /*
+     * A subtle background carries its own -emphasis text colour: Bootstrap defines both halves for
+     * the light and the dark palette, so the pair stays legible in both.
+     */
+    [$label, $classes] = match ($status) {
+        'live' => [get_string('status_live', 'local_page'), 'bg-success-subtle text-success-emphasis'],
+        'draft' => [get_string('status_draft', 'local_page'), 'bg-warning-subtle text-warning-emphasis'],
+        'archived' => [get_string('status_archived', 'local_page'), 'bg-danger-subtle text-danger-emphasis'],
+        default => ['', ''],
+    };
+    if ($label === '') {
+        return '';
+    }
+
+    return trim($OUTPUT->render_from_template('local_page/status_badge', ['label' => $label, 'classes' => $classes]));
 }
 
 /**
