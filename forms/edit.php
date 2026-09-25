@@ -135,38 +135,8 @@ class pages_edit_product_form extends moodleform {
      * Define the form elements and structure.
      */
     public function definition() {
-        global $DB, $PAGE;
-
         // Initialize the form.
         $mform = $this->_form;
-
-        // Get a list of all pages for selection.
-        $none = get_string("none", "local_page");
-        $pages = [0 => $none];
-        $allpages = $DB->get_records('local_page', ['deleted' => 0]); // Fetch all non-deleted pages.
-
-        foreach ($allpages as $page) {
-            if ($page->id != $this->callingpage) {
-                $pages[$page->id] = $page->pagename; // Add page names to the selection.
-            }
-        }
-
-        // Determine available layouts for the page.
-        $hasstandard = false;
-        $layouts = ["standard" => "standard"];
-        $layoutkeys = array_keys($PAGE->theme->layouts);
-
-        foreach ($layoutkeys as $layoutname) {
-            if (strtolower($layoutname) != "standard") {
-                $layouts[$layoutname] = $layoutname; // Add non-standard layouts.
-            } else {
-                $hasstandard = true; // Mark if standard layout exists.
-            }
-        }
-
-        if (!$hasstandard) {
-            unset($layouts['standard']); // Remove standard layout if not available.
-        }
 
         // Page Details.
         $mform->addElement('header', 'details', get_string('details', 'moodle'));

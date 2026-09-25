@@ -29,7 +29,6 @@ require_once(dirname(dirname(dirname(__FILE__))) . '/config.php'); // Include th
 require_once($CFG->dirroot . '/local/page/lib.php'); // Include the local page library.
 
 // Get parameters from URL.
-$download = optional_param('download', '', PARAM_ALPHA); // Get download parameter.
 $pageid = optional_param('id', 0, PARAM_INT); // Get page ID parameter.
 $categoryid = optional_param('category', 0, PARAM_INT); // Course category, for a new category page.
 
@@ -39,8 +38,18 @@ $categoryid = optional_param('category', 0, PARAM_INT); // Course category, for 
  * the login page, which tells a visitor which category ids exist. Called with no course,
  * require_login() sets no course and no context on $PAGE for a request it lets through, so
  * set_category_by_id() below is still the first set_*() call.
+ *
+ * The guest account is refused here too, with the answer require_login() gives a visitor who is not
+ * logged in: require_login() lets a guest session through (and, without its second argument, logs
+ * a visitor in as the guest when autologinguests is on), and a guest would then reach the lookups
+ * and meet the same oracle. No guest can edit a page anyway: has_capability() never grants a guest
+ * local/page:addpages (RISK_XSS) or local/page:managecategorypages (a write capability).
  */
-require_login(); // Ensure the user is logged in.
+require_login(null, false);
+if (isguestuser()) {
+    $SESSION->wantsurl = qualified_me();
+    redirect(get_login_url());
+}
 
 /*
  * Which context this edit is in. For an existing page the stored row decides, whatever the URL
@@ -115,7 +124,6 @@ echo $OUTPUT->header(); // Output the page header.
 // Display page title with back link.
 $backlink = local_page_list_url($context); // Create a URL for the back link.
 $backtext = get_string('backtolist', 'local_page'); // Get the back link text.
-$title = get_string('custompage_title', 'local_page'); // Get the page title.
 $previewlink = new moodle_url('/local/page/index.php', ['id' => $pageid]); // Create a URL for the preview link.
 
 // Output the page title and back link.

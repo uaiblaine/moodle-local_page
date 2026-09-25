@@ -36,7 +36,9 @@ holders of `local/page:managecategorypages` in that category, so a manager of on
 sees another's. Everything the screen then offers stays inside the category: the list, the
 **Add New Page** button, the editor and its back link, cancelling an edit, and deleting a page.
 Site administrators keep the site-wide screen under *Site administration > Plugins > Local plugins >
-Custom pages > Manage pages*, which lists the site's own pages and not any category's.
+Custom pages > Manage pages*, which lists the site's own pages and not any category's. Whoever may
+edit a page, site-wide or in a category, sees its status (*Live*, *Draft* or *Archived*, in their own
+language) as a badge beside its title while reading it; everybody else reads the title alone.
 
 A category page has no `wwwroot/<slug>` friendly URL: that address is the site-wide convention,
 answered by the web server rewrite rules below for site pages only. Its addresses are:

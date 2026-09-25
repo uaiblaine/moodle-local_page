@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Tests for the addresses the listing screen renders.
+ * Tests for the addresses and links the listing screen renders.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -195,6 +195,36 @@ final class pages_list_test extends \advanced_testcase {
         // Control: a site-wide card prints exactly what upstream printed.
         $sitehtml = $renderer->render_page_card(new page_card(7, 'Page', 'live', 0, 0, 'contact'));
         $this->assertSame(["{$CFG->wwwroot}/contact"], $this->friendly_url_blocks($sitehtml));
+    }
+
+    /**
+     * The card's two icon-only links, view and delete, each carry an accessible name.
+     *
+     * Only an icon is drawn inside them, so without the attribute a screen reader announces a bare
+     * link. The links are found by their content (an icon and nothing else), and each attribute is
+     * asserted inside its own opening tag.
+     *
+     * @return void
+     */
+    public function test_the_icon_only_links_carry_an_accessible_name(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $html = $this->renderer()->render_page_card(new page_card(7, 'Page', 'live', 0, 0, 'contact'));
+        preg_match_all('~<a\b([^>]*)>\s*<i class="([^"]*)"[^>]*></i>\s*</a>~', $html, $matches);
+
+        // Precondition: exactly the two icon-only links, the view link first.
+        $this->assertCount(2, $matches[0]);
+        $this->assertStringContainsString('fa-arrow-up-right-from-square', $matches[2][0]);
+        $this->assertStringContainsString('fa-trash', $matches[2][1]);
+
+        $view = s(get_string('view'));
+        $this->assertStringContainsString('aria-label="' . $view . '"', $matches[1][0]);
+        $this->assertStringContainsString('title="' . $view . '"', $matches[1][0]);
+
+        $delete = s(get_string('delete', 'local_page'));
+        $this->assertStringContainsString('aria-label="' . $delete . '"', $matches[1][1]);
+        $this->assertStringContainsString('title="' . $delete . '"', $matches[1][1]);
     }
 
     /**

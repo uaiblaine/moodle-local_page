@@ -69,48 +69,13 @@
 }
 
 /*
- * Common styles for page status badges (applied via ::before on heading).
- * Each status pairs a -bg-subtle background with its -text-emphasis colour:
- * Bootstrap defines both halves per theme, so one declaration is legible in
- * light and dark alike and no second palette has to be maintained.
+ * The status badge local_page_render_view() puts beside a page's heading for the people who may
+ * edit the page (templates/status_badge.mustache); its colours are Bootstrap utilities. A badge's
+ * size is relative to its parent, so inside the heading it would grow with it. Two classes, because
+ * the theme sheet serves Bootstrap's .badge after this file.
  */
-.local-page-status-draft h1.page-header-headings::before,
-.local-page-status-live h1.page-header-headings::before,
-.local-page-status-archived h1.page-header-headings::before {
-    display: inline-block;
-    /* Display as an inline block element */
-    margin-bottom: 10px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: bold;
-    color: var(--bs-emphasis-color, #515151);
-    position: absolute;
-    /* Position relative to the heading's container */
-    top: -40px;
-    /* Adjust positioning as needed */
-    /* Ensure the parent element has position: relative if needed */
-}
-
-/* Specific styles for 'Live' status badge */
-.local-page-status-live h1.page-header-headings::before {
-    content: "Live";
-    background-color: var(--bs-success-bg-subtle, #bfe7bf);
-    color: var(--bs-success-text-emphasis, #515151);
-}
-
-/* Specific styles for 'Draft' status badge */
-.local-page-status-draft h1.page-header-headings::before {
-    content: "Draft";
-    background-color: var(--bs-warning-bg-subtle, moccasin);
-    color: var(--bs-warning-text-emphasis, #515151);
-}
-
-/* Specific styles for 'Archived' status badge */
-.local-page-status-archived h1.page-header-headings::before {
-    content: "Archived";
-    background-color: var(--bs-danger-bg-subtle, #e7baba);
-    color: var(--bs-danger-text-emphasis, #515151);
+.badge.local-page-status-badge {
+    font-size: 0.75rem;
 }
 
 /* Styles for the small label above the URL */

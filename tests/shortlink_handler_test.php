@@ -116,4 +116,32 @@ final class shortlink_handler_test extends \advanced_testcase {
         // Control: the page of the same category that is not deleted answers.
         $this->assertNotNull($handler->process_shortlink(links::LINKTYPE, (string) $page->id));
     }
+
+    /**
+     * A page whose stored context no longer exists answers null, not an error.
+     *
+     * links::page() resolves the stored context with MUST_EXIST, so a row left naming a context that
+     * is gone makes it throw; the handler answers that as core's "not found".
+     *
+     * @return void
+     */
+    public function test_a_page_whose_context_is_gone_answers_nothing(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $categoryid = (int) $this->getDataGenerator()->create_category()->id;
+        $page = $this->pages()->create_category_page($categoryid, ['menuname' => 'handbook']);
+        $handler = new shortlink_handler();
+
+        // Control: with its own context the page answers its address.
+        $this->assertSame(
+            links::page($page)->out(false),
+            $handler->process_shortlink(links::LINKTYPE, (string) $page->id)->out(false)
+        );
+
+        $missing = (int) $DB->get_field_sql('SELECT MAX(id) FROM {context}') + 1000;
+        $DB->set_field('local_page', 'contextid', $missing, ['id' => $page->id]);
+
+        $this->assertNull($handler->process_shortlink(links::LINKTYPE, (string) $page->id));
+    }
 }
