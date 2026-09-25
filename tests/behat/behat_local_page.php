@@ -99,4 +99,25 @@ class behat_local_page extends behat_base {
 
         $this->execute('behat_general::i_visit', [$url]);
     }
+
+    /**
+     * Visits the list of a category's pages, logged in or not.
+     *
+     * The list's address carries the category's context id, which Behat cannot compute, so this step
+     * resolves the idnumber and asks the plugin's own helper for the address:
+     * /local/page/pages.php?contextid=N.
+     *
+     * @Given /^I visit the pages list of the category "(?P<idnumber_string>(?:[^"]|\\")*)"$/
+     * @param string $idnumber The category's idnumber
+     * @return void
+     */
+    public function i_visit_the_pages_list_of_the_category(string $idnumber): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/local/page/lib.php');
+
+        $categoryid = (int) $DB->get_field('course_categories', 'id', ['idnumber' => $idnumber], MUST_EXIST);
+        $url = local_page_list_url(\core\context\coursecat::instance($categoryid));
+
+        $this->execute('behat_general::i_visit', [$url]);
+    }
 }

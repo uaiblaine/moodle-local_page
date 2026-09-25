@@ -80,7 +80,6 @@ $string['metatitle'] = 'Meta Title';
 $string['metatitle_description'] = 'Meta Title Description';
 $string['metatitle_description_help'] = 'Provide a meta title for the page. This will be used to display the title of the page in search results.';
 $string['noaccess'] = 'You do not have permission to view this page.';
-$string['none'] = "None";
 $string['onlyloggedin'] = "Only Logged In";
 $string['onlyloggedin_description'] = "Only show the page to logged in users";
 $string['onlyloggedin_description_help'] = "<ul>

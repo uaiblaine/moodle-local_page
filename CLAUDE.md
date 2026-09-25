@@ -307,16 +307,19 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   test passed over a duplicate, because a value ending in the page's own id is the form that page
   moves to. Prove a change here on a fixture where the `-<id>` form is already held, and assert the
   table after the second run, not only its return value.
-- **`edit.php` checks the login before it reads a row or a category.** `scope::for_category()` is a
-  MUST_EXIST lookup, so an anonymous request reaching it answered an exception for a missing category
-  id and the login page for an existing one. `require_login()` with no course sets no course or
-  context on `$PAGE`, which is what keeps `set_category_by_id()` the first `set_*()` call after it.
-  It is `require_login(null, false)` followed by a refusal of the guest account (the login page, with
+- **`edit.php` and `pages.php` refuse a visitor and a guest before any lookup.** The editor's
+  `scope::for_category()` and the listing's `context::instance_by_id()` are MUST_EXIST lookups, so
+  an anonymous request reaching one answered an exception for a missing id and the login page for an
+  existing one. `require_login()` with no course sets no course or context on `$PAGE`, which is what
+  keeps `set_category_by_id()` the first `set_*()` call after it. Both scripts use
+  `require_login(null, false)` followed by a refusal of the guest account (the login page, with
   `wantsurl`, which is what `require_login()` gives a visitor): a guest session passes a plain
   `require_login()`, and its default argument even logs a visitor in as the guest where
   `autologinguests` is on, so a guest would otherwise reach the lookups and meet the same oracle.
-  Two scenarios of `tests/behat/category_pages.feature` hold the order, one for a visitor and one
-  for a guest; no unit test can, because `edit.php` is a script.
+  The rationale is written once, in the comment above the check in `edit.php`; `pages.php` points at
+  it, and keeps its capability check after the lookup, because the capability is read in the context
+  the URL names. Four scenarios of `tests/behat/category_pages.feature` hold the order, a visitor
+  and a guest for each script; no unit test can, because both are scripts.
 - **A new `lib.php` callback is invisible on the web until the plugin function
   cache is rebuilt.** `get_plugins_with_function()` — which is how core finds
   `local_page_extend_navigation_category_settings()` — is memoised in MUC, so the
@@ -414,9 +417,12 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   `tests/behat/category_pages.feature` walks a category manager from the
   category page to the pages screen and back, which is the one path no unit
   test can assert because it is made of links, sends a visitor and then a
-  guest to the editor of a category that does not exist and of one that does
-  (the login page every time), and shows the status badge in a page's heading
-  to the category's manager and not to a manager of another category.
+  guest to the editor and to the pages list of a category that does not exist
+  and of one that does (the login page every time; the list is reached through
+  the `I visit the pages list of the category` step of `behat_local_page.php`,
+  which resolves the category's context id), and shows the status badge in a
+  page's heading to the category's manager and not to a manager of another
+  category.
   `tests/behat/anonymous_viewer.feature`
   runs with `forcelogin` switched on in its Background — the production state,
   stated rather than assumed — and holds three things: a visitor still reads a
@@ -444,7 +450,7 @@ Follow the patterns in existing files, and remember which side of the fork line
 a file is on. The codebase is internally consistent — if a new file feels like
 it matches no existing shape, re-examine the approach.
 
-## State of the fork (2026-09-23)
+## State of the fork (2026-09-25)
 
 The category-pages series (`1.0.10+uai.1` to `uai.9`) is merged: pull request #1
 took the stacked branches `stage-0-fleet-onboarding` (`90e75b3`) ->
@@ -457,7 +463,7 @@ took the stacked branches `stage-0-fleet-onboarding` (`90e75b3`) ->
 stay on the remote as the record of the series; `stage-2` and `stage-3` carry the
 broken upgrade order fixed in stage 4, so never deploy one of them to a real site.
 
-Three branches follow it:
+Four branches follow it:
 
 - `comments-audit`: the comment audit (`89440e5`, comment lines only) and the
   five code findings it raised, fixed as `1.0.10+uai.10` (two upgrade steps, the
@@ -465,7 +471,10 @@ Three branches follow it:
   login-before-lookup order).
 - `audit-improvements`: the improvement findings the audit left open, as `1.0.10+uai.11` (the
   guest refusal in the editor, the localised status badge, the card's accessible names, the
-  negation-only message, dead code). It is the tip of the fork.
+  negation-only message, dead code).
+- `pages-oracle`: the listing's login-before-lookup order and guest refusal, as `1.0.10+uai.12`
+  (the same oracle the editor had closed, now closed in `pages.php`), and the unused `none` string
+  removed. It is the tip of the fork.
 - `upstream-security-fixes` (on `cf3df54`, upstream's own `main`, unchanged since
   the fork): the seven security fixes worth offering upstream, one commit each,
   release `v1.0.11` unreleased, green on the legs upstream's own `ci.yml` runs.
