@@ -481,6 +481,8 @@ Four branches follow it:
   The upstream pull request is opened only when the owner says so (decision D10).
 
 There is never a release tag (D11): installs come from git, syncs from upstream
-by merge. The theme follow-ups T1-T3 were deferred by decision D13. Production
+by merge. The theme follow-ups T1-T3 were deferred by decision D13 and are recorded, with
+the facts a later session needs, in the theme repo's `docs/local-page-followups.md`; the
+owner acts on them once the category showcase is fully implemented. Production
 adoption follows the README's *Adopting category pages* checklist; the plugin is
 not installed at FUNDASEG yet.
