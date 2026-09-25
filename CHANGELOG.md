@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## [1.0.10+uai.12] - 2026-09-25
+
+The oracle the editor had closed, closed in the listing too, and one unused string removed. No table,
+column or upgrade step changes.
+
+### Fixed
+- **The pages list told a visitor and a guest which context ids exist.** `pages.php` looked up the
+  context named by `?contextid=` before the login check, so a visitor who was not logged in met an
+  error for a context id that does not exist and the login page for a category context that does (and
+  `invalidcontext` for any other context), and the guest account met a missing-record error against a
+  refusal (`nopermissions`). The listing now checks the login and refuses the guest account before any
+  lookup, as the editor does, and no longer logs a visitor in as the guest: both answers are the login
+  page, for a visitor and for a guest. The capability check stays after the lookup, since it is read in
+  the context the URL names.
+
+### Removed
+- The string `none` (English and Brazilian Portuguese), which no code, template or form read.
+
+### Added
+- Two Behat scenarios in `tests/behat/category_pages.feature`: a visitor and then a guest opening the
+  pages list of a context that does not exist and of a category that does, and the step
+  `I visit the pages list of the category "<idnumber>"` in `tests/behat/behat_local_page.php`.
+
 ## [1.0.10+uai.11] - 2026-09-24
 
 The improvements the comment audit left open: one oracle closed for the guest account, the page's

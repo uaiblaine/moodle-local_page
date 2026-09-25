@@ -33,6 +33,18 @@ $deletepage = optional_param('pagedel', 0, PARAM_INT);
 // Which set of pages this screen lists: the site's, or one course category's.
 $contextid = optional_param('contextid', 0, PARAM_INT);
 
+/*
+ * The login check, and the refusal of the guest account, come before the context named in the URL is
+ * looked up, so that a context id that does not exist and one that does get the same answer. See the
+ * login check in edit.php for the rationale, and for why set_category_by_id() below is still the first
+ * set_*() call.
+ */
+require_login(null, false);
+if (isguestuser()) {
+    $SESSION->wantsurl = qualified_me();
+    redirect(get_login_url());
+}
+
 // Set up the page context.
 if ($contextid > 0) {
     $context = \core\context::instance_by_id($contextid, MUST_EXIST);
@@ -67,8 +79,7 @@ if ($context->contextlevel == CONTEXT_COURSECAT) {
     $PAGE->set_heading(get_string('pagesetup_heading', 'local_page'));
 }
 
-// Force the user to login and check capabilities for managing pages in THIS context.
-require_login();
+// Check the capability for managing pages in THIS context, now that the context is known.
 require_capability(\local_page\local\scope::capability($context), $context);
 
 // Handle page deletion if requested.

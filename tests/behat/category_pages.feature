@@ -75,6 +75,27 @@ Feature: Authoring the custom pages that belong to a course category
     Then "Username" "field" should exist
     And I should not see "Title of the Page"
 
+  Scenario: A visitor opening the pages list meets the login page whether or not the category exists
+    # The listing names its context by id: an error for a context id that does not exist beside the
+    # login page for one that does would tell a visitor which ids exist, as in the editor.
+    When I visit "/local/page/pages.php?contextid=999999"
+    Then "Username" "field" should exist
+    When I visit the pages list of the category "CAT1"
+    Then "Username" "field" should exist
+    And I should not see "Page Management"
+
+  Scenario: A guest opening the pages list meets the login page whether or not the category exists
+    # As in the editor, a guest session passes a plain login check and would otherwise reach the
+    # lookup of the context.
+    Given the following config values are set as admin:
+      | guestloginbutton | 1 |
+    And I log in as "guest"
+    When I visit "/local/page/pages.php?contextid=999999"
+    Then "Username" "field" should exist
+    When I visit the pages list of the category "CAT1"
+    Then "Username" "field" should exist
+    And I should not see "Page Management"
+
   Scenario: The people who may edit a page see its status beside its title, and its readers do not
     Given the following "local_page > pages" exist:
       | pagename       | menuname | category | status |

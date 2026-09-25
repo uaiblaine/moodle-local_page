@@ -79,7 +79,6 @@ $string['metatitle'] = 'Metatítulo';
 $string['metatitle_description'] = 'Descrição do metatítulo';
 $string['metatitle_description_help'] = 'Informe o metatítulo da página. Ele será usado para exibir o título da página nos resultados de busca.';
 $string['noaccess'] = 'Sem permissão para ver esta página.';
-$string['none'] = 'Nenhuma';
 $string['onlyloggedin'] = 'Somente usuários autenticados';
 $string['onlyloggedin_description'] = 'Exibir a página apenas para usuários autenticados';
 $string['onlyloggedin_description_help'] = '<ul>
