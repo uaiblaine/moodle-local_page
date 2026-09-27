@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [1.0.10+uai.13] - 2026-09-27
+
+A read API for another plugin to list a category's pages - the category showcase of the FUNDASEG
+theme draws them under its header. No table, column or upgrade step changes.
+
+### Added
+- **`\local_page\local\catalogue::for_viewer($categoryid)`**: the pages of a course category the
+  current viewer may read, as plain data (id, name, address, short description), ordered by name. It
+  answers exactly what the page's own address would let the viewer read, and never more:
+  - a visitor or a guest gets nothing, before anything is looked up, unless the category is public;
+  - only the category's own pages, never a subcategory's, another category's or the site's;
+  - only live pages inside their publish window, even for somebody who may preview drafts at the
+    page's address, because a list is what readers see;
+  - and each page's own rules: logged-in only, and the access level.
+
+  Nothing declares a dependency on it: a caller asks `class_exists()` and draws nothing without it.
+
 ## [1.0.10+uai.12] - 2026-09-25
 
 The oracle the editor had closed, closed in the listing too, and one unused string removed. No table,

@@ -130,6 +130,8 @@ classes/shortlink_handler.php      Resolves the plugin's /p/ codes for core's sh
 classes/local/publicaccess.php  Fail-closed adapter: is this category public; who is a visitor.
 classes/local/scope.php     Which context a page lives in, and which capability governs it.
 classes/local/ogimage.php   A page's Open Graph image: which file, its hashed address, its size.
+classes/local/catalogue.php A category's pages the viewer may read, as plain data for another
+                            plugin's list (the theme's pages strip): for_viewer().
 classes/local/lifecycle.php What a category's deletion does to its pages; lib.php's two
                             pre_course_category_* callbacks delegate to it.
 classes/local/hook/output/before_standard_head_html_generation.php
@@ -220,6 +222,16 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   argument; the tests that read the real predicate skip themselves, or assert
   only the refusal, where it is missing. It memoises per category id for the
   request and ids repeat between tests, so call its `reset_caches()` first.
+- **`catalogue::for_viewer()` answers what the page ADDRESS answers, and is the one read API another
+  plugin gets.** Same guard order as `request::category()` - the visitor's refusal before any lookup,
+  zero statements, held by `catalogue_test` exactly as `request_test` holds the request's - then the
+  category's own context, then `local_page_user_can_view_page()` row by row. One departure, on
+  purpose: it lists only LIVE pages inside their window even for somebody the address lets preview
+  a draft, because the list is what readers see (the theme's owner decided it, 2026-09-27). The
+  statement's `deleted = 0` is a narrowing and not a guard - the read rule refuses a deleted row
+  before even the administrator's shortcut, which is why it has no mutation gate. It returns the
+  plain spelling and `links::page()`'s address; a caller must never be handed rendered markup,
+  so a change in how this plugin renders a page cannot reach another plugin's HTML.
 - **An access level made only of negations grants the page to everybody.** The
   loop starts at `$canaccess = false`, and `!moodle/site:config` flips it to
   true for anyone who does not hold the capability — which is every visitor,
@@ -474,15 +486,18 @@ Four branches follow it:
   negation-only message, dead code).
 - `pages-oracle`: the listing's login-before-lookup order and guest refusal, as `1.0.10+uai.12`
   (the same oracle the editor had closed, now closed in `pages.php`), and the unused `none` string
-  removed. It is the tip of the fork.
+  removed.
+- `claude/compassionate-davinci-l4zo5z` (2026-09-27): `catalogue::for_viewer()`, the read API the
+  theme's pages strip (T2) lists a category's pages through, as `1.0.10+uai.13`. It is the tip of
+  the fork.
 - `upstream-security-fixes` (on `cf3df54`, upstream's own `main`, unchanged since
   the fork): the seven security fixes worth offering upstream, one commit each,
   release `v1.0.11` unreleased, green on the legs upstream's own `ci.yml` runs.
   The upstream pull request is opened only when the owner says so (decision D10).
 
 There is never a release tag (D11): installs come from git, syncs from upstream
-by merge. The theme follow-ups T1-T3 were deferred by decision D13 and are recorded, with
-the facts a later session needs, in the theme repo's `docs/local-page-followups.md`; the
-owner acts on them once the category showcase is fully implemented. Production
+by merge. The theme follow-ups T1-T3 are recorded, with the facts a later session needs, in the
+theme repo's `docs/local-page-followups.md`: T1 (the hotsite's share picture) is built in the theme
+alone, T2 (the pages strip) through `catalogue`, and T3 (the `/curso/` rewrite) is not started. Production
 adoption follows the README's *Adopting category pages* checklist; the plugin is
 not installed at FUNDASEG yet.

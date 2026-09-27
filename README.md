@@ -135,6 +135,28 @@ search engines*): a category page exists so that a shared link unfurls, not so t
 lists it, and that is the site's decision, not each author's. A site-wide page without a directive
 carries none, as before.
 
+### Listing a category's pages from another plugin
+
+`\local_page\local\catalogue::for_viewer(int $categoryid): array` answers the pages of a course
+category that the **current viewer** may read, for a list another plugin draws - the category
+showcase of the FUNDASEG theme shows them under its header. Each entry is
+`['id' => int, 'name' => string, 'url' => string, 'description' => string]`: the name and the *Meta
+Description* in the plain spelling (escape them once, where you write them), and the page's canonical
+address. The list is ordered by name.
+
+It lists exactly what the page's own address would let the viewer read, and never more:
+
+- a visitor who is not logged in, or the guest account, gets nothing - decided before anything is
+  looked up - unless the category is public (`local_unlistedcourses`);
+- only the category's **own** pages: never a subcategory's, another category's or the site's;
+- only **live** pages inside their publish window, even for somebody who may preview a draft at the
+  page's address - a list is what readers see, and a draft there would look published;
+- and each page's own rules: *Only logged-in users* and the access level.
+
+Nothing declares a dependency on this class. A caller checks
+`class_exists('\local_page\local\catalogue')` and draws nothing when the plugin is absent, so a theme
+works the same with or without it.
+
 ## Adopting category pages
 
 This section is for the administrator taking category pages into production. It was written for the
