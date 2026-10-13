@@ -17,7 +17,6 @@
 /.github              export-ignore
 /.gitignore           export-ignore
 /.moodle-plugin-ci.yml export-ignore
-/.stylelintrc.json    export-ignore
 /CLAUDE.md            export-ignore
 /README_OUTPUT_API.md export-ignore
 /docs                 export-ignore
