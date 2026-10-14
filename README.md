@@ -171,7 +171,7 @@ Run every `php` command from the Moodle directory that holds `config.php`, as th
 
 ### Prerequisites
 
-- **Moodle 5.2.** The plugin requires it and declares no other branch.
+- **Moodle 5.2 or 5.3.** The plugin requires 5.2 and declares support up to 5.3.
 - **This fork, from its git repository.** The plugin page on moodle.org publishes upstream's
   releases, which have none of this; see *What this fork does not ship* below.
 - **The routing engine, `$CFG->routerconfigured = true`**, with the web server fallback that hands

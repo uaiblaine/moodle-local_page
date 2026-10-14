@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [1.0.10+uai.14] - 2026-10-14
+
+Moodle 5.3 declared supported; CI runs a 5.3 leg. No table, column or upgrade step changes.
+
+### Changed
+- **`$plugin->supported` is now `[502, 503]`**, and the CI workflow runs the full matrix on 5.3 and one
+  database on 5.2.
+
 ## [1.0.10+uai.13] - 2026-09-27
 
 A read API for another plugin to list a category's pages - the category showcase of the FUNDASEG
