@@ -61,8 +61,6 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 #[CoversFunction('local_page_ogimage_is_servable')]
 #[CoversFunction('local_page_require_editable_page')]
 #[CoversFunction('local_page_pluginfile')]
-#[CoversFunction('local_page_pages_referencing_pagecontent_file')]
-#[CoversFunction('local_page_user_can_serve_pagecontent_file')]
 #[CoversFunction('local_page_page_in_context')]
 #[CoversFunction('local_page_save_target_context')]
 #[CoversFunction('local_page_pre_course_category_delete')]
@@ -535,7 +533,7 @@ final class lib_test extends \advanced_testcase {
      * Stores one file in the pagecontent area of a context, under an item id.
      *
      * @param int $contextid Context to store it in.
-     * @param int $itemid Item id: 0 for the shared site-wide area, the page id for a category page.
+     * @param int $itemid Item id: the id of the page the file belongs to.
      * @param string $filename File name to store.
      * @return void
      */
@@ -1078,7 +1076,7 @@ final class lib_test extends \advanced_testcase {
             'sibling category context'
         );
 
-        // Nor may the site-wide area, where a category page's files never are.
+        // Nor may the system context through item id 0, which names no page.
         $this->assertFalse(
             \local_page_pluginfile(null, null, $system, 'pagecontent', [0, 'body.png'], false, ['dontdie' => true]),
             'system context, legacy item id'
@@ -1096,73 +1094,6 @@ final class lib_test extends \advanced_testcase {
             \local_page_pluginfile(null, null, $ctxa, 'pagecontent', [$itemid, 'body.png'], false, ['dontdie' => true]),
             'own context, page deleted'
         );
-    }
-
-    /**
-     * A page of another context can never authorise a file of the site-wide area.
-     *
-     * Every site-wide page writes its files under item id 0, so a file's owner is read out of the
-     * content of the pages that name it, and that search must stay inside the context the file is
-     * asked through ({@see local_page_pages_referencing_pagecontent_file()}).
-     *
-     * The second half is the point of the test: the site-wide page holding the file is a draft the
-     * category manager may not read, while their own page naming the same file is one they may.
-     * Both halves carry a control, because a search that had simply stopped matching anything at
-     * all would pass every refusal here just as well as the clause does.
-     *
-     * @return void
-     */
-    public function test_a_page_of_another_context_cannot_authorise_a_site_wide_file(): void {
-        $this->resetAfterTest();
-
-        $fs = get_file_storage();
-        $system = \context_system::instance();
-        $category = $this->getDataGenerator()->create_category();
-        $categorycontext = \core\context\coursecat::instance($category->id);
-
-        $reference = '<p><img src="@@PLUGINFILE@@/secret.png"></p>';
-
-        $this->store_pagecontent_file((int) $system->id, 0, 'secret.png');
-        $categorypage = $this->pages()->create_category_page((int) $category->id, ['pagecontent' => $reference]);
-
-        $manager = $this->user_holding_at('local/page:managecategorypages', $categorycontext);
-        $this->setUser($manager);
-
-        // Controls: the file really is in the area being asked for, and the reference really is stored.
-        $this->assertNotEmpty($fs->get_file($system->id, 'local_page', 'pagecontent', 0, '/', 'secret.png'));
-        $this->assertStringContainsString('secret.png', (string) $categorypage->pagecontent);
-        $this->assertTrue(\local_page_user_can_view_page($categorypage), 'the manager may read their own page');
-
-        // With no site-wide page naming the file, nothing in that area authorises it.
-        $this->assertSame([], \local_page_pages_referencing_pagecontent_file((int) $system->id, '/', 'secret.png'));
-        $this->assertFalse(\local_page_user_can_serve_pagecontent_file((int) $system->id, '/', 'secret.png'));
-        $this->assertFalse(
-            \local_page_pluginfile(null, null, $system, 'pagecontent', [0, 'secret.png'], false, ['dontdie' => true]),
-            'a category page may not authorise a site-wide file'
-        );
-
-        // Now the page the file belongs to exists, and it is a draft this manager may not read.
-        $sitepage = $this->pages()->create_page(['pagecontent' => $reference, 'status' => 'draft']);
-        $this->assertFalse(\local_page_user_can_view_page($sitepage), 'the draft is not readable by the manager');
-
-        $matches = \local_page_pages_referencing_pagecontent_file((int) $system->id, '/', 'secret.png');
-        $this->assertCount(1, $matches, 'only rows of the context asked for are searched');
-        $this->assertSame((int) $sitepage->id, (int) $matches[0]->id);
-
-        $this->assertFalse(\local_page_user_can_serve_pagecontent_file((int) $system->id, '/', 'secret.png'));
-        $this->assertFalse(
-            \local_page_pluginfile(null, null, $system, 'pagecontent', [0, 'secret.png'], false, ['dontdie' => true]),
-            'the draft that owns the file decides, not the category page that names it'
-        );
-
-        /*
-         * Control: the search itself still finds and authorises the file. An administrator may
-         * read the draft, so the same call answers true — which is how the refusals above are
-         * known to be the context clause and the draft gate, and not a needle that stopped
-         * matching.
-         */
-        $this->setAdminUser();
-        $this->assertTrue(\local_page_user_can_serve_pagecontent_file((int) $system->id, '/', 'secret.png'));
     }
 
     /**

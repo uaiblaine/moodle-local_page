@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## [1.0.10+uai.15] - 2026-10-28
+
+Every page keeps its embedded files in an area of its own. One upgrade step (2026102800), which
+copies files; no table or column changes.
+
+### Fixed
+- **Two editors saving site-wide pages at the same time deleted each other's new files.** Every
+  site-wide page stored its embedded files in one shared area (item id 0), the editor of any of them
+  loaded that whole area into its draft, and saving made the area equal to the draft. A file another
+  editor uploaded and saved in between was therefore deleted by the next save of any other site-wide
+  page. Files removed from a page's text also stayed in the shared area for good, since every draft
+  carried them back.
+
+### Changed
+- **A site-wide page now stores its embedded files under its own id**, as a category page always has.
+  The editor loads only that page's files, a new page starts with an empty draft, and the viewer
+  spells file addresses under the page's id.
+- **The file route authorises a `pagecontent` file by one row lookup in both contexts**: the page of
+  that id, in the context the file is asked through, not deleted, and readable by the viewer. The
+  content search that authorised the shared area (`local_page_pages_referencing_pagecontent_file()`,
+  `local_page_user_can_serve_pagecontent_file()` and `local_page_haystack_contains_pluginfile_needle()`)
+  is removed.
+- **Addresses under item id 0 are no longer served.** The editor never stores one (it stores the
+  `@@PLUGINFILE@@` placeholder, which carries no item id), so pages keep working; a literal
+  `.../local_page/pagecontent/0/...` address pasted into a page, a theme or another site stops
+  resolving.
+
+### Upgrade
+- **Step 2026102800** copies each file of the old shared area to every site-wide page whose
+  `pagecontent` or `contenthtml` names it through the placeholder, deleted pages included, so that a
+  page restored later still has its files. A copy shares the original's content hash: no bytes are
+  duplicated on disk. Files no page names are not copied. The old area is left in place, unserved, for
+  a later orphan collector. Running the step again copies nothing.
+
 ## [1.0.10+uai.14] - 2026-10-14
 
 Moodle 5.3 declared supported; CI runs a 5.3 leg. No table, column or upgrade step changes.

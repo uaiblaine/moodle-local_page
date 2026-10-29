@@ -708,138 +708,6 @@ function local_page_user_can_view_page(object $page, ?string $predicate = null):
 }
 
 /**
- * Whether $hay contains $needle as a whole reference (not as a strict prefix of a longer filename/path).
- *
- * The match must end at end-of-string or before a URL/HTML boundary character (?, #, quotes, whitespace,
- * `<`, `)`, `]`, `&`, or the NUL used to join page fields in the search buffer).
- *
- * @param string $hay Content to search
- * @param string $needle Path fragment to find (non-empty)
- * @return bool
- */
-function local_page_haystack_contains_pluginfile_needle(string $hay, string $needle): bool {
-    if ($needle === '') {
-        return false;
-    }
-    $len = strlen($needle);
-    $offset = 0;
-    while (($pos = strpos($hay, $needle, $offset)) !== false) {
-        $next = substr($hay, $pos + $len, 1);
-        if ($next === '' || strpos("\0?#\"' \t\r\n<)&]&", $next) !== false) {
-            return true;
-        }
-        $offset = $pos + 1;
-    }
-    return false;
-}
-
-/**
- * Returns local_page rows whose HTML references a stored file in the pagecontent filearea (itemid 0).
- *
- * Candidate rows are still found with SQL LIKE on the filename; references are then confirmed with
- * anchored matching so one filename cannot satisfy a request for a strict prefix of another.
- *
- * Only rows of the context the file was requested through are searched. Everything in the
- * site-wide area is stored under itemid 0, so a file's owner can only be read out of the content
- * that names it; without the clause a category author (local/page:managecategorypages) could paste
- * a reference to a site-wide file into their own viewable page and make that file servable
- * whatever the state of the site-wide page it belongs to.
- *
- * @param int $contextid Context id the file was requested through
- * @param string $filepath File path with leading/trailing slashes (e.g. /sub/)
- * @param string $filename File name
- * @return stdClass[] List of page records (values only)
- * @throws \dml_missing_record_exception When the context id names no context
- * @throws \coding_exception When the context is neither the system nor a course category
- */
-function local_page_pages_referencing_pagecontent_file(int $contextid, string $filepath, string $filename): array {
-    global $DB;
-
-    $rel = trim($filepath, '/');
-    $suffix = $rel === '' ? $filename : $rel . '/' . $filename;
-    $parts = array_filter(explode('/', $suffix), static function (string $part): bool {
-        return $part !== '';
-    });
-    $encodedparts = array_map('rawurlencode', array_values($parts));
-    $encodedsuffix = implode('/', $encodedparts);
-
-    $needles = [
-        '@@PLUGINFILE@@/' . $suffix,
-        '@@PLUGINFILE@@/' . $encodedsuffix,
-        '/pluginfile.php/' . $contextid . '/local_page/pagecontent/0/' . $suffix,
-        '/pluginfile.php/' . $contextid . '/local_page/pagecontent/0/' . $encodedsuffix,
-        'pluginfile.php/' . $contextid . '/local_page/pagecontent/0/' . $suffix,
-        'pluginfile.php/' . $contextid . '/local_page/pagecontent/0/' . $encodedsuffix,
-        $contextid . '/local_page/pagecontent/0/' . $suffix,
-        $contextid . '/local_page/pagecontent/0/' . $encodedsuffix,
-        '/local_page/pagecontent/0/' . $suffix,
-        '/local_page/pagecontent/0/' . $encodedsuffix,
-        'local_page/pagecontent/0/' . $suffix,
-        'local_page/pagecontent/0/' . $encodedsuffix,
-    ];
-    $encsuffix = rawurlencode($suffix);
-    if ($encsuffix !== '') {
-        $needles[] = 'local_page%2Fpagecontent%2F0%2F' . $encsuffix;
-    }
-
-    $fnesc = $DB->sql_like_escape($filename);
-    $encodedfilename = rawurlencode($filename);
-    $likesql = [
-        $DB->sql_like('pagecontent', ':pc', false),
-        $DB->sql_like('contenthtml', ':ch', false),
-    ];
-    $params = [
-        'pc' => '%' . $fnesc . '%',
-        'ch' => '%' . $fnesc . '%',
-    ];
-    if ($encodedfilename !== $filename) {
-        $fnencesc = $DB->sql_like_escape($encodedfilename);
-        $likesql[] = $DB->sql_like('pagecontent', ':pce', false);
-        $likesql[] = $DB->sql_like('contenthtml', ':che', false);
-        $params['pce'] = '%' . $fnencesc . '%';
-        $params['che'] = '%' . $fnencesc . '%';
-    }
-    $params['ctx'] = \local_page\local\scope::stored_contextid(\core\context::instance_by_id($contextid, MUST_EXIST));
-    $sql = "SELECT * FROM {local_page} WHERE deleted = 0 AND contextid = :ctx AND (" . implode(' OR ', $likesql) . ")";
-
-    $candidates = $DB->get_recordset_sql($sql, $params);
-    $matches = [];
-    foreach ($candidates as $page) {
-        $hay = ($page->pagecontent ?? '') . "\0" . ($page->contenthtml ?? '');
-        foreach ($needles as $needle) {
-            if (local_page_haystack_contains_pluginfile_needle($hay, $needle)) {
-                $matches[$page->id] = $page;
-                break;
-            }
-        }
-    }
-    $candidates->close();
-
-    return array_values($matches);
-}
-
-/**
- * Whether the current user may fetch a pagecontent area file via pluginfile.php.
- *
- * @param int $contextid Context id the file was requested through
- * @param string $filepath Stored file path (with slashes)
- * @param string $filename File name
- * @return bool
- */
-function local_page_user_can_serve_pagecontent_file(int $contextid, string $filepath, string $filename): bool {
-    $pages = local_page_pages_referencing_pagecontent_file($contextid, $filepath, $filename);
-    if ($pages === []) {
-        return false;
-    }
-    foreach ($pages as $page) {
-        if (local_page_user_can_view_page($page)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
  * Retrieves and serves saved files associated with a specific page.
  *
  * This function handles file requests for different file areas, such as
@@ -884,31 +752,24 @@ function local_page_pluginfile($course, $birecordorcm, $context, $filearea, $arg
         $filepath = $args ? '/' . implode('/', $args) . '/' : '/';
 
         /*
-         * A category page keeps its files under its own id in its own context, so one row lookup
-         * authorises the file; the system area, all under itemid 0, needs the content search below.
-         * Without contextid this context would serve a page of another category, and without
-         * deleted = 0 the files of a deleted page.
+         * Every page keeps its files under its own id in its own context (see
+         * pages_edit_product_form::pagecontent_itemid()), so one row lookup authorises the file.
+         * Page ids are unique table-wide: without contextid this context would serve another
+         * context's page, and without deleted = 0 the files of a deleted page. Item id 0 names no
+         * page and is refused here; it was the area every site-wide page shared before upgrade step
+         * 2026102800.
          */
-        $iscategoryfile = $context->contextlevel == CONTEXT_COURSECAT;
-        if ($iscategoryfile) {
-            $categorypage = $DB->get_record('local_page', [
-                'id' => $itemid,
-                'contextid' => $context->id,
-                'deleted' => 0,
-            ]);
-            if (!$categorypage || !local_page_user_can_view_page($categorypage)) {
-                return false;
-            }
+        $page = $DB->get_record('local_page', [
+            'id' => $itemid,
+            'contextid' => \local_page\local\scope::stored_contextid($context),
+            'deleted' => 0,
+        ]);
+        if (!$page || !local_page_user_can_view_page($page)) {
+            return false;
         }
 
         // Attempt to retrieve the file from the pagecontent area.
         $file = $fs->get_file($context->id, 'local_page', 'pagecontent', $itemid, $filepath, $filename);
-
-        if (!$iscategoryfile && $file && !$file->is_directory()) {
-            if (!local_page_user_can_serve_pagecontent_file((int) $context->id, $filepath, $filename)) {
-                return false;
-            }
-        }
 
         // Special handling for H5P files - integrate with Moodle's H5P system
         // This allows H5P content uploaded to pages to be properly displayed

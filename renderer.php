@@ -245,7 +245,7 @@ class local_page_renderer extends plugin_renderer_base {
             $editable = local_page_require_editable_page((int) $data->id, $postedcontextid);
             $writecontext = local_page_save_target_context($editable, $postedcontextid);
             $iscategory = $writecontext->contextlevel == CONTEXT_COURSECAT;
-            $itemid = $iscategory ? (int) ($editable->id ?? 0) : 0;
+            $itemid = (int) ($editable->id ?? 0);
 
             $draftitemid = file_get_submitted_draft_itemid('pagecontent');
             $pagecontenttext = '';
@@ -255,11 +255,11 @@ class local_page_renderer extends plugin_renderer_base {
 
             /*
              * Where the embedded files live: see pages_edit_product_form::pagecontent_itemid(). A
-             * new category page has no id yet, so its text is stored raw and rewritten right after
-             * the insert, below.
+             * new page has no id yet, so its text is stored raw and rewritten right after the
+             * insert, below.
              */
-            $newcategorypage = $iscategory && $itemid <= 0;
-            if ($newcategorypage) {
+            $newpage = $itemid <= 0;
+            if ($newpage) {
                 $savedpagecontent = $pagecontenttext;
             } else {
                 $savedpagecontent = file_save_draft_area_files(
@@ -359,9 +359,9 @@ class local_page_renderer extends plugin_renderer_base {
                 $lock->release();
             }
 
-            if ($result && $result > 0 && $newcategorypage) {
+            if ($result && $result > 0 && $newpage) {
                 /*
-                 * The itemid of a category page's files is its own id, which exists only now. Save
+                 * The itemid of a page's files is its own id, which exists only now. Save
                  * the draft area under it and store the rewritten text over the raw one, so the
                  * @@PLUGINFILE@@ placeholders point at the area the files actually landed in.
                  */

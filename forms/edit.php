@@ -76,18 +76,20 @@ class pages_edit_product_form extends moodleform {
     }
 
     /**
-     * The itemid this page's embedded files are stored under.
+     * The itemid this page's embedded files are stored under, or null for a page not saved yet.
      *
-     * A site-wide page shares one area at itemid 0, as upstream stores it, so the file URLs already
-     * in existing pages keep resolving. A category page uses its own id, so that the file route can
-     * authorise a file from the row it belongs to. A category page that has not been saved yet has
-     * no id: its files are moved into place right after the insert (see renderer::save_page()).
+     * Every page, site-wide or of a category, keeps its files under its own id, so that one page's
+     * save never rewrites another page's files and the file route authorises a file from the row it
+     * belongs to. Upstream stored every site-wide page under itemid 0, and the editor of any of them
+     * then carried, and saved back, all of them. A page that has not been saved yet has no id: null
+     * makes file_prepare_draft_area() start an empty draft, and the files are moved into place right
+     * after the insert (see renderer::save_page()).
      *
      * @param int $pageid Page id, or 0 for a page that does not exist yet.
-     * @return int
+     * @return int|null
      */
-    protected function pagecontent_itemid(int $pageid): int {
-        return $this->pagecontext->contextlevel == CONTEXT_COURSECAT ? $pageid : 0;
+    protected function pagecontent_itemid(int $pageid): ?int {
+        return $pageid > 0 ? $pageid : null;
     }
 
     /**

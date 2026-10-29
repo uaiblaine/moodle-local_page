@@ -33,7 +33,8 @@ global $CFG;
 require_once($CFG->dirroot . '/local/page/db/upgradelib.php');
 
 /**
- * Tests for db/upgradelib.php: the frozen slug normalisation and the hidetitle schema repair.
+ * Tests for db/upgradelib.php: the frozen slug normalisation, the hidetitle schema repair and the
+ * split of the shared site-wide pagecontent area.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -41,6 +42,8 @@ require_once($CFG->dirroot . '/local/page/db/upgradelib.php');
  */
 #[CoversFunction('local_page_upgrade_normalise_slugs')]
 #[CoversFunction('local_page_upgrade_hidetitle_notnull')]
+#[CoversFunction('local_page_upgrade_split_site_pagecontent')]
+#[CoversFunction('local_page_upgrade_text_names_file')]
 final class upgradelib_test extends \advanced_testcase {
     /**
      * The plugin's own data generator.
@@ -184,5 +187,99 @@ final class upgradelib_test extends \advanced_testcase {
                 $dbman->change_field_notnull($table, $this->hidetitle_field(true));
             }
         }
+    }
+
+    /**
+     * Store one file in the shared site-wide pagecontent area, item id 0, as upstream stored them.
+     *
+     * @param string $filepath Path with leading and trailing slashes
+     * @param string $filename File name
+     * @return void
+     */
+    private function store_shared_file(string $filepath, string $filename): void {
+        get_file_storage()->create_file_from_string(
+            [
+                'contextid' => \context_system::instance()->id,
+                'component' => 'local_page',
+                'filearea' => 'pagecontent',
+                'itemid' => 0,
+                'filepath' => $filepath,
+                'filename' => $filename,
+            ],
+            'bytes of ' . $filename
+        );
+    }
+
+    /**
+     * The paths stored in a site page's own pagecontent area.
+     *
+     * @param int $itemid Item id: the page id, or 0 for the shared area
+     * @return string[] Sorted paths, each filepath plus filename
+     */
+    private function site_area(int $itemid): array {
+        $files = get_file_storage()->get_area_files(
+            \context_system::instance()->id,
+            'local_page',
+            'pagecontent',
+            $itemid,
+            'filepath, filename',
+            false
+        );
+        $paths = array_values(array_map(
+            static fn (\stored_file $file): string => $file->get_filepath() . $file->get_filename(),
+            $files
+        ));
+        sort($paths);
+        return $paths;
+    }
+
+    /**
+     * The split copies each shared file to every site page that names it, and to nothing else.
+     *
+     * The fixture covers both spellings the editor stores (a sub-directory and a name with a space,
+     * encoded), a file two pages share, a deleted page, a name that is a strict prefix of another, a
+     * file nobody names, and a category page naming a site file, which is not a site page and gets
+     * nothing. The second run is the idempotence a replayed upgrade relies on.
+     *
+     * @return void
+     */
+    public function test_the_shared_site_area_is_split_into_one_area_per_page(): void {
+        $this->resetAfterTest();
+
+        $this->store_shared_file('/', 'a.png');
+        $this->store_shared_file('/', 'a.png2');
+        $this->store_shared_file('/sub/', 'b c.png');
+        $this->store_shared_file('/', 'd.png');
+        $this->store_shared_file('/', 'unused.png');
+
+        $first = (int) $this->pages()->create_page([
+            'pagecontent' => '<img src="@@PLUGINFILE@@/a.png"><img src="@@PLUGINFILE@@/sub/b%20c.png" alt="">',
+        ])->id;
+        $second = (int) $this->pages()->create_page([
+            'pagecontent' => '<p>Text only.</p>',
+            'contenthtml' => '<a href="@@PLUGINFILE@@/a.png?forcedownload=1">a</a>',
+        ])->id;
+        $deleted = (int) $this->pages()->create_page([
+            'pagecontent' => '<img src="@@PLUGINFILE@@/d.png">',
+            'deleted' => 1,
+        ])->id;
+        $prefix = (int) $this->pages()->create_page(['pagecontent' => '<img src="@@PLUGINFILE@@/a.png2">'])->id;
+        $category = $this->getDataGenerator()->create_category();
+        $categorypage = (int) $this->pages()->create_category_page(
+            (int) $category->id,
+            ['pagecontent' => '<img src="@@PLUGINFILE@@/a.png">']
+        )->id;
+
+        $this->assertSame(5, local_page_upgrade_split_site_pagecontent());
+
+        $this->assertSame(['/a.png', '/sub/b c.png'], $this->site_area($first));
+        $this->assertSame(['/a.png'], $this->site_area($second));
+        $this->assertSame(['/d.png'], $this->site_area($deleted));
+        $this->assertSame(['/a.png2'], $this->site_area($prefix));
+        $this->assertSame([], $this->site_area($categorypage));
+        $this->assertCount(5, $this->site_area(0), 'the originals stay for the collector');
+
+        $this->assertSame(0, local_page_upgrade_split_site_pagecontent(), 'a second run copies nothing');
+        $this->assertSame(['/a.png', '/sub/b c.png'], $this->site_area($first));
     }
 }
