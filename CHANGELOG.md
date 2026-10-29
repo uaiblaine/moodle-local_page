@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [1.0.10+uai.17] - 2026-10-29
+
+Files nobody uses are removed. No table, column or upgrade step changes; the version bump registers a
+scheduled task.
+
+### Added
+- **Pruning at save.** A file the author removed from the page's text is removed from the page's area
+  by the next save, unless the Content HTML field still names it (`@@PLUGINFILE@@/name` or the page's
+  own file address). Core's `file_remove_editor_orphaned_files()` reads the editor alone and would
+  have dropped those.
+- **Scheduled task `\local_page\task\collect_orphan_files`** (weekly): deletes the file areas that
+  belong to no page of their context, with any H5P package core deployed from them. That takes the
+  area every site page shared before 2026102800, the areas of pages deleted outside the recycle bin,
+  and files stored under a page id in a context the page does not live in. A page in the bin keeps
+  its files. It shares the lock a category move holds while it carries files ahead of their row.
+- **`cli/orphan_files.php`**: the same collection on demand; it only lists unless given `--run`.
+
+### Changed
+- The H5P cleanup the recycle bin does is now `\local_page\local\files::forget_h5p()`, shared with
+  the collector.
+
 ## [1.0.10+uai.16] - 2026-10-29
 
 A recycle bin for deleted pages. One column (`timedeleted`), one upgrade step (2026102900), one

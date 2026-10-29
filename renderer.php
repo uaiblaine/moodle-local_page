@@ -253,6 +253,15 @@ class local_page_renderer extends plugin_renderer_base {
                 $pagecontenttext = $data->pagecontent['text'];
             }
 
+            // The draft still holds every file the author removed from the text; drop those before
+            // the save makes the page's area equal to the draft. See \local_page\local\files.
+            \local_page\local\files::prune_draft(
+                $draftitemid,
+                (string) $pagecontenttext,
+                (string) ($data->contenthtml ?? ''),
+                $itemid
+            );
+
             /*
              * Where the embedded files live: see pages_edit_product_form::pagecontent_itemid(). A
              * new page has no id yet, so its text is stored raw and rewritten right after the

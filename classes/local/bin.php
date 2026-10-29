@@ -44,9 +44,6 @@ final class bin {
     /** @var int Retention used while the binexpiry setting has never been saved: seven days. */
     public const DEFAULT_EXPIRY = 7 * DAYSECS;
 
-    /** @var array The file areas a page keeps under its own id; both go with the page. */
-    private const FILEAREAS = ['pagecontent', 'ogimage'];
-
     /**
      * Move a page to its context's bin.
      *
@@ -306,9 +303,9 @@ final class bin {
 
         if ($context !== null) {
             $fs = get_file_storage();
-            foreach (self::FILEAREAS as $filearea) {
+            foreach (files::FILEAREAS as $filearea) {
                 foreach ($fs->get_area_files($context->id, 'local_page', $filearea, $pageid, 'id', false) as $file) {
-                    self::forget_h5p($file);
+                    files::forget_h5p($file);
                 }
                 $fs->delete_area_files($context->id, 'local_page', $filearea, $pageid);
             }
@@ -323,27 +320,5 @@ final class bin {
             'objectid' => $pageid,
             'context' => $context ?? \core\context\system::instance(),
         ])->trigger();
-    }
-
-    /**
-     * Delete the H5P package core deployed from a file, if it deployed one.
-     *
-     * Core keeps the deployment ({h5p} and its content files) after the package file is gone, keyed
-     * by the file's path hash, so the deployment has to go before the file does.
-     *
-     * @param \stored_file $file A file of the page's areas
-     * @return void
-     */
-    private static function forget_h5p(\stored_file $file): void {
-        global $DB;
-
-        if (\core_text::strtolower(pathinfo($file->get_filename(), PATHINFO_EXTENSION)) !== 'h5p') {
-            return;
-        }
-
-        $h5p = $DB->get_record('h5p', ['pathnamehash' => $file->get_pathnamehash()]);
-        if ($h5p) {
-            \core_h5p\api::delete_content($h5p, new \core_h5p\factory());
-        }
     }
 }

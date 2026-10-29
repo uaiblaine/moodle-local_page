@@ -1,6 +1,7 @@
 # Recycle bin and file lifecycle — proposal
 
-Status: proposal, not implemented. Written 2026-10-28 against `main` at `7e048a5`
+Status: implemented in three stages, F1 (pull request #15), F2 (#16) and F3; the text below is the
+proposal as written, with the owner's decisions folded in. Written 2026-10-28 against `main` at `7e048a5`
 (`v1.0.10+uai.14`, `supported = [502, 503]`).
 
 ## 1. Why core's recycle bin is not an option
