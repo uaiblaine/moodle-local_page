@@ -85,26 +85,10 @@ require_capability(\local_page\local\scope::capability($context), $context);
 // Handle page deletion if requested.
 if ($deletepage !== 0) {
     require_sesskey();
-    // Mark the page as deleted in the database, and release the friendly URL it was holding in the
-    // same write: a slug belongs to a page a visitor can reach, and a deleted page is not one.
-    // A page restored by hand therefore needs a new slug.
-    //
-    // The row has to belong to the context this screen was authorised for: the capability was
-    // checked there, and the id travels in a link, so without the comparison a category manager
-    // could delete a site-wide page by typing its id.
-    $pagetodelete = $DB->get_record('local_page', ['id' => $deletepage], 'id, menuname, contextid');
-    if ($pagetodelete && local_page_page_in_context($pagetodelete, $context)) {
-        $DB->update_record('local_page', (object) [
-            'id' => (int) $pagetodelete->id,
-            'deleted' => 1,
-            'menuname' => \local_page\local\slug::deleted_name(
-                (string) $pagetodelete->menuname,
-                (int) $pagetodelete->id
-            ),
-        ]);
-        // Its public short address dies with it: the /p/ code of a deleted page answers not found.
-        \local_page\local\links::forget((int) $pagetodelete->id);
-    }
+    // The page goes to this context's recycle bin. Only a page of the context this screen was
+    // authorised for: the capability was checked there, and the id travels in a link, so without the
+    // comparison a category manager could delete a site-wide page by typing its id.
+    \local_page\local\bin::delete($deletepage, $context);
     // Redirect to the same page to prevent resubmission.
     redirect($listurl);
 }

@@ -44,6 +44,7 @@ require_once($CFG->dirroot . '/local/page/db/upgradelib.php');
 #[CoversFunction('local_page_upgrade_hidetitle_notnull')]
 #[CoversFunction('local_page_upgrade_split_site_pagecontent')]
 #[CoversFunction('local_page_upgrade_text_names_file')]
+#[CoversFunction('local_page_upgrade_stamp_deleted_pages')]
 final class upgradelib_test extends \advanced_testcase {
     /**
      * The plugin's own data generator.
@@ -281,5 +282,29 @@ final class upgradelib_test extends \advanced_testcase {
 
         $this->assertSame(0, local_page_upgrade_split_site_pagecontent(), 'a second run copies nothing');
         $this->assertSame(['/a.png', '/sub/b c.png'], $this->site_area($first));
+    }
+
+    /**
+     * The pages deleted before the bin existed get the upgrade's time, and nothing else is written.
+     *
+     * @return void
+     */
+    public function test_pages_deleted_before_the_bin_are_stamped_with_the_upgrade_time(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $old = (int) $this->pages()->create_page(['deleted' => 1])->id;
+        $stamped = (int) $this->pages()->create_page(['deleted' => 1, 'timedeleted' => 1000])->id;
+        $live = (int) $this->pages()->create_page()->id;
+
+        $this->assertSame(1, local_page_upgrade_stamp_deleted_pages(5000));
+
+        $this->assertSame(5000, (int) $DB->get_field('local_page', 'timedeleted', ['id' => $old]));
+        $this->assertSame(1000, (int) $DB->get_field('local_page', 'timedeleted', ['id' => $stamped]));
+        $this->assertSame(0, (int) $DB->get_field('local_page', 'timedeleted', ['id' => $live]));
+
+        $this->assertSame(0, local_page_upgrade_stamp_deleted_pages(9000), 'a second run stamps nothing');
+        $this->assertSame(5000, (int) $DB->get_field('local_page', 'timedeleted', ['id' => $old]));
     }
 }

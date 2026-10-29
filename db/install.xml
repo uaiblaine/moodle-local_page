@@ -1,4 +1,4 @@
-<XMLDB xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" PATH="local/page/db" VERSION="20260922" COMMENT="XMLDB file for Moodle local/page" xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
+<XMLDB xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" PATH="local/page/db" VERSION="20261029" COMMENT="XMLDB file for Moodle local/page" xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
     <TABLES>
         <TABLE NAME="local_page" COMMENT="Custom pages for the local_page plugin">
             <FIELDS>
@@ -9,6 +9,7 @@
                 <FIELD NAME="meta" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Meta information for the page" />
                 <FIELD NAME="pagecontent" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="HTML content of the page" />
                 <FIELD NAME="deleted" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Flag to indicate if the page has been deleted (1=deleted)" />
+                <FIELD NAME="timedeleted" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the page was moved to the recycle bin; 0 while it is not deleted" />
                 <FIELD NAME="pagedate" TYPE="int" LENGTH="20" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Timestamp of when the page was created or modified" />
                 <FIELD NAME="enddate" TYPE="int" LENGTH="20" NOTNULL="false" DEFAULT="0" SEQUENCE="false" COMMENT="Timestamp of when the page will be unpublished" />
                 <FIELD NAME="accesslevel" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false" COMMENT="Access level required to view the page" />

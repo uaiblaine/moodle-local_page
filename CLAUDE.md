@@ -101,11 +101,12 @@ rule did not apply.
 index.php            Public viewer. Hands ?id=, ?menuname= or ?category=&page= to the
                      request class, translates its answer, then renders through
                      local_page_render_view() (lib.php), the body the route renders too.
-pages.php            Admin list of pages (cards), and the delete action.
+pages.php            Admin list of pages (cards), and the delete action (to the recycle bin).
+bin.php              A context's recycle bin: restore, delete permanently, empty.
 edit.php             Admin add/edit screen; wraps forms/edit.php.
 forms/edit.php       The whole edit form — the largest file in the plugin.
 lib.php              Function-only library: the access predicate, pluginfile serving,
-                     the anchored needle matcher used to authorise embedded files.
+                     the URL helpers of the list, the editor and the bin.
 renderer.php         showpage() and the placeholder substitution for page content.
 classes/custompage.php      Row wrapper used by the viewer.
 classes/local/request.php   The viewer's decision, in one order, for every address.
@@ -119,6 +120,9 @@ classes/local/catalogue.php A category's pages the viewer may read, as plain dat
                             plugin's list (the theme's pages strip): for_viewer().
 classes/local/lifecycle.php What a category's deletion does to its pages; lib.php's two
                             pre_course_category_* callbacks delegate to it.
+classes/local/bin.php       The recycle bin: delete, restore, purge, empty, the retention.
+classes/event/              page_deleted, page_restored, page_purged (triggered by bin only).
+classes/task/purge_deleted_pages.php  The bin's retention, daily (db/tasks.php).
 classes/local/hook/output/before_standard_head_html_generation.php
                             Writes the head tags a page registered (db/hooks.php).
 classes/url_rewriter.php    Friendly-URL rewriting (pairs with .htaccess).
@@ -182,6 +186,15 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   stored under 0. In a test that saves through the form, `file_get_submitted_draft_itemid()` reads
   `$_REQUEST`, which `mock_submit()` does not fill: set `$_REQUEST['pagecontent']` around the save
   and unset it after, or the next editor opened reuses that draft.
+- **Deleting a page is `bin::delete()`, and every bin method acts on its own context only.**
+  `pages.php` and `bin.php` check the capability in the context their URL names; `bin` then reads
+  the row with `contextid` = that context and the `deleted` value its action needs, so an id typed
+  into a URL can never reach another context's page or the wrong side of the bin. A restore takes
+  the slug back under the save path's `menuname` lock (`slug::restored_name()`, then
+  `unique_in_context()`). A permanent deletion runs in one transaction: H5P deployments, both file
+  areas, short codes, the row. `purge_expired()` deletes a deleted row whose context is gone
+  whatever the retention: core deleted its files with the category, so nothing could restore it.
+  The setting is read through `bin::expiry()`, which answers 7 days while it was never saved.
 - **`\local_page\local\links` is the only place an address is spelled.** The request class, the
   canonical tag, the listing card, the shortlink handler and the Behat step all ask it; a
   `new moodle_url('/local/page/index.php', ...)` written anywhere else is how two parts of the plugin
@@ -193,10 +206,12 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   category page while the router is configured; the card only reads `links::existing_share()`. Minting
   goes through core's `\core\shortlink::create_public_shortlink()` with no retry around it: core's
   delegated transaction is left undisposed when its insert fails, and catching that on PostgreSQL would
-  poison the rest of the request. `pages.php` forgets a page's codes on delete, `db/uninstall.php` on
-  uninstall; core deletes nothing from `{shortlink}`. That is all `db/uninstall.php` does: the
-  plugin's files need no loop there, because `uninstall_plugin()` calls
-  `file_storage::delete_component_files()` after the plugin's own function, in every context.
+  poison the rest of the request. A page in the recycle bin keeps its codes (the handler refuses a
+  deleted row, and a restore gives the address back); `bin`'s permanent deletion, a category deleted
+  with its content and `db/uninstall.php` forget them; core deletes nothing from `{shortlink}`.
+  That is all `db/uninstall.php` does: the plugin's files need no loop there, because
+  `uninstall_plugin()` calls `file_storage::delete_component_files()` after the plugin's own
+  function, in every context.
 - **The legacy script's two redirects sit on opposite sides of the rules, on purpose.** The slug form
   (`request::category(..., legacy: true)`) answers a 303 to the route BEFORE any lookup — the same
   redirect for every id and slug, so it tells nobody anything. The `?id=` form (`request::legacy()`)

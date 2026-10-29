@@ -6,7 +6,8 @@ This module allows users to create and manage custom pages within Moodle. It pro
 ## Features
 - **Add Pages**: Users can create new pages with specific content and settings.
 - **Edit Pages**: Existing pages can be modified to update content or settings.
-- **Delete Pages**: Users can remove pages that are no longer needed.
+- **Delete Pages**: Users can remove pages that are no longer needed. A deleted page waits in a
+  recycle bin, from which it can be restored or deleted permanently (see *Recycle bin* below).
 - **Access Control**: Define access levels for each page based on user capabilities.
 
 ## Usage
@@ -18,6 +19,29 @@ This module allows users to create and manage custom pages within Moodle. It pro
 ## Configuration
 - **Access Level**: Specify the capabilities required to view the page. Use commas to separate multiple capabilities.
 - **Additional HTML**: Optionally add custom HTML to the `<head>` section of the page for additional styling or scripts.
+- **Recycle bin retention** (`local_page/binexpiry`, default 7 days): how long a deleted page stays in
+  the recycle bin before the scheduled task *Delete custom pages whose time in the recycle bin is
+  over* (`\local_page\task\purge_deleted_pages`, daily) deletes it permanently. 0 keeps deleted
+  pages until somebody deletes them by hand.
+
+## Recycle bin
+
+Deleting a page moves it to the recycle bin of its own context: the site's pages to the site's bin,
+a category's pages to that category's. The pages screen links to the bin while it holds anything.
+A page in the bin cannot be viewed, its files are not served, and its friendly URL is free for
+another page. Its row in `{local_page}`, its files and its public short link are kept.
+
+- **Restore** brings the page back as it was, with its files, its short link and its old friendly
+  URL. When another page has taken that URL meanwhile, that page keeps it and the restored page gets
+  its id appended (`contato` becomes `contato-42`), as the confirmation says.
+- **Delete permanently**, and **Empty recycle bin**, remove the row, both file areas and the short
+  link, after a confirmation. They cannot be undone.
+- The scheduled task deletes permanently every page whose time in the bin is over (the retention
+  setting above), and at once every page whose category was deleted: those can never be restored.
+
+Who may use a bin is who may manage the pages of that context: `local/page:addpages` for the site's
+pages, `local/page:managecategorypages` in the category for a category's. Each action is logged
+(*Custom page moved to the recycle bin*, *restored from the recycle bin*, *deleted permanently*).
 
 ## Category pages (this fork)
 
@@ -84,10 +108,11 @@ publish window, "only logged-in users" flag and access level, in the category's 
 
 Moodle offers two ways to delete a course category, and its pages follow each of them.
 
-- **Deleting it with all its content.** Its pages are deleted with it, the way the pages screen
-  deletes one: they stop answering, their friendly URLs are released and their short codes removed,
-  and their files go with the category. A subcategory deleted along with it gives the same treatment
-  to its own pages.
+- **Deleting it with all its content.** Its pages are deleted with it: they stop answering, their
+  friendly URLs are released and their short codes removed, and their files go with the category.
+  Unlike a page deleted from the pages screen they cannot be restored, so the recycle bin's task
+  deletes their rows on its next run. A subcategory deleted along with it gives the same treatment to
+  its own pages.
 - **Deleting it and moving its content to another category.** Its pages move to that category with
   their files — the image and everything the text embeds — and answer at the new category's address.
   A short code keeps working and now leads to the new address. A page whose friendly URL the new

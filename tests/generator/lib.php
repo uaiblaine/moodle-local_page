@@ -66,6 +66,7 @@ final class local_page_generator extends component_generator_base {
             'onlyloggedin' => 0,
             'hidetitle' => 'no',
             'deleted' => 0,
+            'timedeleted' => 0,
             'pagecontent' => '<p>Body</p>',
             'contenthtml' => '',
             'contenttrust' => 0,

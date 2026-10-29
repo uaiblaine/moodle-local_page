@@ -352,6 +352,30 @@ final class slug_test extends \advanced_testcase {
     }
 
     /**
+     * restored_name() undoes deleted_name(), as far as the column width let it keep the old slug.
+     *
+     * @return void
+     */
+    public function test_restored_name_undoes_deleted_name(): void {
+        $this->resetAfterTest();
+
+        $this->assertSame('about', slug::restored_name(slug::deleted_name('about', 7), 7));
+        $this->assertSame('page-7', slug::restored_name(slug::deleted_name('', 7), 7));
+
+        // Only the page's own suffix is removed: another id's is part of the slug.
+        $this->assertSame('about-deleted-8', slug::restored_name('about-deleted-8', 7));
+
+        // A row deleted before slugs were released has no suffix and keeps its slug.
+        $this->assertSame('contact', slug::restored_name('Contact', 7));
+
+        // A slug that filled the column comes back as much of it as deleted_name() kept.
+        $long = str_repeat('a', 255);
+        $restored = slug::restored_name(slug::deleted_name($long, 12), 12);
+        $this->assertSame(255 - \core_text::strlen('-deleted-12'), \core_text::strlen($restored));
+        $this->assertStringStartsWith($restored, $long);
+    }
+
+    /**
      * normalise_all() names empty slugs, separates duplicates, mangles deleted rows, lower-cases.
      *
      * @return void
