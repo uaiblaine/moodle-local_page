@@ -194,16 +194,17 @@ class custompage {
     /**
      * Rewrites the @@PLUGINFILE@@ placeholders of a loaded row into real pluginfile URLs.
      *
-     * The row decides the file area: site-wide pages share one area in the system context under
-     * itemid 0, while a category page has its own area in its category context under its page id.
-     * Both loaders call this method so they cannot disagree about where a file is.
+     * The row decides the file area: every page has its own, under its page id, in its own context
+     * (see pages_edit_product_form::pagecontent_itemid()). Both loaders call this method so they
+     * cannot disagree about where a file is.
      *
      * @param \stdClass $data Row being prepared for the viewer; modified in place.
      * @return void
      */
     private static function rewrite_file_urls(\stdClass $data): void {
         $context = \local_page\local\scope::context($data);
-        $itemid = \local_page\local\scope::is_category($data) ? (int) $data->id : 0;
+        // A page that was not found arrives as a bare object with no id: it has no files to point at.
+        $itemid = (int) ($data->id ?? 0);
 
         if (!empty($data->pagecontent)) {
             $data->pagecontent = \file_rewrite_pluginfile_urls(

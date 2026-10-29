@@ -157,3 +157,86 @@ function local_page_upgrade_hidetitle_notnull(): void {
     $DB->set_field_select('local_page', 'hidetitle', 'no', 'hidetitle IS NULL');
     $dbman->change_field_notnull($table, $field);
 }
+
+/**
+ * Gives every site page its own pagecontent area: copies each shared item-id-0 file to item id = page id.
+ *
+ * Until step 2026102800 every site page stored its embedded files in one area of the system context
+ * under item id 0, and each save made that whole area equal to the editor's draft, so two editors
+ * saving at once deleted each other's new files. A site page now keeps them under its own id, as a
+ * category page always has. Its stored text needs no rewrite: the editor stores @@PLUGINFILE@@/<path>,
+ * which carries no item id.
+ *
+ * A file is copied to every site page whose pagecontent or contenthtml names it through the
+ * placeholder, deleted pages included, so that a page restored later still has its files. A copy is
+ * a new {files} row over the same content hash: no bytes are duplicated on disk. A file no page names
+ * is not copied. The item-id-0 originals are left in place: nothing serves them any longer, and
+ * removing them is the orphan collector's job, not an upgrade step's. A copy that already exists is
+ * skipped, so a second run copies nothing.
+ *
+ * Reads only id, contextid, pagecontent and contenthtml, which exist from step 2026092202 on.
+ *
+ * @return int Number of files copied
+ */
+function local_page_upgrade_split_site_pagecontent(): int {
+    global $DB;
+
+    $system = \context_system::instance();
+    $fs = get_file_storage();
+    $files = $fs->get_area_files($system->id, 'local_page', 'pagecontent', 0, 'filepath, filename', false);
+    if ($files === []) {
+        return 0;
+    }
+
+    $copied = 0;
+    $rows = $DB->get_recordset('local_page', ['contextid' => 0], 'id ASC', 'id, pagecontent, contenthtml');
+    foreach ($rows as $row) {
+        $pageid = (int) $row->id;
+        $hay = (string) $row->pagecontent . "\0" . (string) $row->contenthtml;
+        foreach ($files as $file) {
+            if (!local_page_upgrade_text_names_file($hay, $file->get_filepath(), $file->get_filename())) {
+                continue;
+            }
+            if ($fs->file_exists($system->id, 'local_page', 'pagecontent', $pageid, $file->get_filepath(), $file->get_filename())) {
+                continue;
+            }
+            $fs->create_file_from_storedfile(['itemid' => $pageid], $file);
+            $copied++;
+        }
+    }
+    $rows->close();
+
+    return $copied;
+}
+
+/**
+ * Whether a page's text names a file of its area through the @@PLUGINFILE@@ placeholder.
+ *
+ * The path is looked for as written and with each segment URL-encoded, the two spellings the editor
+ * stores. A match must end the reference: the next character is the end of the text or one that
+ * cannot continue a file name in HTML (quote, whitespace, ?, #, <, ), ], & or the NUL that joins the
+ * page's two fields), so a.png is not found inside a.png2.
+ *
+ * @param string $hay The page's pagecontent and contenthtml, joined by a NUL
+ * @param string $filepath The file's path, with leading and trailing slashes
+ * @param string $filename The file's name
+ * @return bool
+ */
+function local_page_upgrade_text_names_file(string $hay, string $filepath, string $filename): bool {
+    $relative = trim($filepath, '/');
+    $suffix = $relative === '' ? $filename : $relative . '/' . $filename;
+    $encoded = implode('/', array_map('rawurlencode', explode('/', $suffix)));
+
+    foreach (array_unique(['@@PLUGINFILE@@/' . $suffix, '@@PLUGINFILE@@/' . $encoded]) as $needle) {
+        $offset = 0;
+        while (($pos = strpos($hay, $needle, $offset)) !== false) {
+            $next = substr($hay, $pos + strlen($needle), 1);
+            if ($next === '' || strpos("\0?#\"' \t\r\n<)]&", $next) !== false) {
+                return true;
+            }
+            $offset = $pos + 1;
+        }
+    }
+
+    return false;
+}

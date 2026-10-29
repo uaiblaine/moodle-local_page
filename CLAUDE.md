@@ -10,16 +10,17 @@ administrator author standalone site pages — HTML body, optional raw Content
 HTML, SEO/Open Graph metadata, a publish window, a status and an access level —
 and serve them at `/local/page/?id=N` or at a friendly URL built from the page's
 `menuname`. It owns one table, `{local_page}`, and two file areas,
-`pagecontent` and `ogimage`, in the system context or a course category's. It
+`pagecontent` and `ogimage`, in the system context or a course category's, both
+under item id = page id for every page (see the file-area gotcha below). It
 declares no dependency on any sibling plugin; whether a category's pages reach
 visitors is asked of `local_unlistedcourses` when it is installed, and the
 answer is "no" when it is not (see the viewer gotcha below). Supports
-Moodle **5.2 only** (`$plugin->requires = 2026042000`,
-`$plugin->supported = [502, 502]`). CI is the moodle-an-hochschulen reusable
+Moodle **5.2 and 5.3** on one `main` (`$plugin->requires = 2026042000`,
+`$plugin->supported = [502, 503]`). CI is the moodle-an-hochschulen reusable
 workflow, one job per supported branch in `.github/workflows/ci.yml` — **update
 that job list when `supported` changes**. Development happens on **m502**; this
-repo is mounted into **m502** and **m502b** at `local/page` (see
-`~/dev/moodle-dev/plugins.conf`).
+repo is mounted into **m502**, **m502b**, **m503** and **m503b** at `local/page`
+(see `~/dev/moodle-dev/plugins.conf`).
 
 ## This is a fork, and the fork policy is the first thing to know
 
@@ -139,10 +140,9 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
 
 - **`local_page_user_can_view_page()` (lib.php) is the whole read-side access
   rule.** The request class, the renderer (`showpage()`) and the pluginfile
-  callback (directly for a category page's files, via
-  `local_page_user_can_serve_pagecontent_file()` for the shared site-wide area)
-  all go through it, so a hole there is a file served to someone who should not
-  have it, not a display bug. Since stage 5 it carries the **public-category
+  callback (for the page an embedded file's item id names) all go through it,
+  so a hole there is a file served to someone who should not have it, not a
+  display bug. Since stage 5 it carries the **public-category
   clause**: a category page is refused to a visitor (nobody logged in, or the
   guest account) unless `\local_page\local\publicaccess` says its category is
   public. That clause is what keeps a private category's embedded files away
@@ -170,6 +170,18 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   target and `index.php` calls `redirect()`; the upstream `require_login()` for
   a page with an access level runs in `local_page_render_view()`, after that
   redirect, on both the script and the route.
+- **Every page's embedded files live under its own id, and nothing serves item id 0.**
+  `pages_edit_product_form::pagecontent_itemid()`, `renderer::save_page()`,
+  `custompage::rewrite_file_urls()` and the `pagecontent` branch of `local_page_pluginfile()` all
+  use item id = page id, in both contexts; keep the four in step. Upstream stored every site-wide
+  page under item id 0, the editor of any of them loaded the whole area, and a save made the area
+  equal to the draft, so two editors saving at once deleted each other's files
+  (`tests/file_areas_test.php` reproduces it). Step 2026102800 copied the shared files to each page
+  that names them and left the old area for an orphan collector. A new page's editor gets item id
+  null, which makes `file_prepare_draft_area()` start an empty draft; 0 would load whatever is still
+  stored under 0. In a test that saves through the form, `file_get_submitted_draft_itemid()` reads
+  `$_REQUEST`, which `mock_submit()` does not fill: set `$_REQUEST['pagecontent']` around the save
+  and unset it after, or the next editor opened reuses that draft.
 - **`\local_page\local\links` is the only place an address is spelled.** The request class, the
   canonical tag, the listing card, the shortlink handler and the Behat step all ask it; a
   `new moodle_url('/local/page/index.php', ...)` written anywhere else is how two parts of the plugin

@@ -144,5 +144,16 @@ function xmldb_local_page_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026092210, 'local', 'page');
     }
 
+    if ($oldversion < 2026102800) {
+        // Every site-wide page now keeps its embedded files under its own id, as a category page
+        // always has. Until now they all shared item id 0, and each save made that area equal to
+        // the editor's draft, so two editors saving at once deleted each other's new files. Each
+        // file is copied to every site page that names it; the old area is left for the orphan
+        // collector, since nothing serves it any longer. Running it again copies nothing.
+        local_page_upgrade_split_site_pagecontent();
+
+        upgrade_plugin_savepoint(true, 2026102800, 'local', 'page');
+    }
+
     return true;
 }
