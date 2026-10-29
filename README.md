@@ -39,6 +39,23 @@ another page. Its row in `{local_page}`, its files and its public short link are
 - The scheduled task deletes permanently every page whose time in the bin is over (the retention
   setting above), and at once every page whose category was deleted: those can never be restored.
 
+### Files nobody uses
+
+A page keeps its embedded files in an area of its own. When the author removes an image from the
+text, the next save removes the file too, unless the *Content HTML* field still names it (by
+`@@PLUGINFILE@@/name` or by the page's own file address).
+
+Files that belong to no page at all are deleted every week by the scheduled task *Delete custom page
+files that belong to no page* (`\local_page\task\collect_orphan_files`): those of pages that no
+longer exist, and those of the area every site page shared before version 2026102800, which nothing
+serves any longer. A page in the recycle bin still owns its files. To see what the task would delete,
+without deleting anything:
+
+```sh
+php local/page/cli/orphan_files.php
+php local/page/cli/orphan_files.php --run   # delete them now
+```
+
 Who may use a bin is who may manage the pages of that context: `local/page:addpages` for the site's
 pages, `local/page:managecategorypages` in the category for a category's. Each action is logged
 (*Custom page moved to the recycle bin*, *restored from the recycle bin*, *deleted permanently*).

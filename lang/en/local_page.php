@@ -137,4 +137,5 @@ $string['status'] = 'Status';
 $string['status_archived'] = 'Archived';
 $string['status_draft'] = 'Draft';
 $string['status_live'] = 'Live';
+$string['taskcollectorphanfiles'] = 'Delete custom page files that belong to no page';
 $string['taskpurgedeletedpages'] = 'Delete custom pages whose time in the recycle bin is over';

@@ -136,4 +136,5 @@ $string['status'] = 'Situação';
 $string['status_archived'] = 'Arquivada';
 $string['status_draft'] = 'Rascunho';
 $string['status_live'] = 'Publicada';
+$string['taskcollectorphanfiles'] = 'Excluir os arquivos de páginas personalizadas que não pertencem a nenhuma página';
 $string['taskpurgedeletedpages'] = 'Excluir as páginas personalizadas cujo tempo na lixeira terminou';

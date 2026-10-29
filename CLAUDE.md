@@ -123,6 +123,9 @@ classes/local/lifecycle.php What a category's deletion does to its pages; lib.ph
 classes/local/bin.php       The recycle bin: delete, restore, purge, empty, the retention.
 classes/event/              page_deleted, page_restored, page_purged (triggered by bin only).
 classes/task/purge_deleted_pages.php  The bin's retention, daily (db/tasks.php).
+classes/local/files.php     Pruning a draft at save; finding and deleting areas no page owns.
+classes/task/collect_orphan_files.php The orphan collector, weekly; cli/orphan_files.php on demand
+                            (lists only, unless --run).
 classes/local/hook/output/before_standard_head_html_generation.php
                             Writes the head tags a page registered (db/hooks.php).
 classes/url_rewriter.php    Friendly-URL rewriting (pairs with .htaccess).
@@ -195,6 +198,15 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   areas, short codes, the row. `purge_expired()` deletes a deleted row whose context is gone
   whatever the retention: core deleted its files with the category, so nothing could restore it.
   The setting is read through `bin::expiry()`, which answers 7 days while it was never saved.
+- **A page's areas hold only the files the page uses, and two rules keep them so.**
+  `files::prune_draft()` runs in `save_page()` before either draft save: it keeps a draft file named
+  by the editor's text (its draft address) or by contenthtml (`@@PLUGINFILE@@/path` or the page's own
+  `/local_page/pagecontent/<id>/path`), reading both fields as stored and URL-decoded once (an H5P
+  embed names its file inside a query string). Core's `file_remove_editor_orphaned_files()` must not
+  replace it: it reads the editor's text only. `files::collect_orphans()` deletes an area whose
+  (context, item id) names no row stored in that context, deleted rows included, so the bin keeps its
+  files; item id 0 never names a row. It takes the `menuname` lock because `lifecycle::category_moved()`
+  moves a page's files into the new context before it re-points the row, under that lock.
 - **`\local_page\local\links` is the only place an address is spelled.** The request class, the
   canonical tag, the listing card, the shortlink handler and the Behat step all ask it; a
   `new moodle_url('/local/page/index.php', ...)` written anywhere else is how two parts of the plugin

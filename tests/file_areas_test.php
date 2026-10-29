@@ -49,6 +49,7 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 #[CoversClass(\pages_edit_product_form::class)]
 #[CoversClass(custompage::class)]
 #[CoversFunction('local_page_pluginfile')]
+#[CoversClass(\local_page\local\files::class)]
 final class file_areas_test extends \advanced_testcase {
     /**
      * Point $PAGE at a context the way edit.php does.
@@ -435,5 +436,35 @@ final class file_areas_test extends \advanced_testcase {
         $this->assertNull($this->ask_route($categorycontext, [$categorypage, 'cat.png'], 'bytes of cat.png'), 'control: cat');
         $this->assertFalse($this->ask_route($categorycontext, [$sitepage, 'site.png'], 'bytes of site.png'));
         $this->assertFalse($this->ask_route($system, [$categorypage, 'cat.png'], 'bytes of cat.png'));
+    }
+
+    /**
+     * A file removed from the text is gone from the page's area after the next save.
+     *
+     * The control is the first save, where both files are named and both are kept.
+     *
+     * @return void
+     */
+    public function test_a_file_removed_from_the_text_leaves_the_area_at_the_next_save(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $system = \context_system::instance();
+
+        $draft = $this->open_editor($system, 0);
+        $this->upload($draft, 'kept.png', 'bytes of kept.png');
+        $this->upload($draft, 'dropped.png', 'bytes of dropped.png');
+        $pageid = $this->save(
+            $system,
+            0,
+            'handbook',
+            $draft,
+            '<p><img src="@@PLUGINFILE@@/kept.png"><img src="@@PLUGINFILE@@/dropped.png"></p>'
+        );
+        $this->assertSame(['dropped.png', 'kept.png'], $this->area_names($system, $pageid), 'control: both named, both kept');
+
+        $draft = $this->open_editor($system, $pageid);
+        $this->save($system, $pageid, 'handbook', $draft, '<p><img src="@@PLUGINFILE@@/kept.png"></p>');
+
+        $this->assertSame(['kept.png'], $this->area_names($system, $pageid));
     }
 }
