@@ -24,6 +24,8 @@
     * draftpages - Array of draft pages  
     * archivedpages - Array of archived pages
     * addpageurl - URL to add new page
+    * bincount - Number of pages in the recycle bin; the link to it shows only when not 0
+    * binurl - URL of the recycle bin of the same context
 
     Example context (json):
     {
@@ -71,7 +73,9 @@
                 "deleteurl": "https://example.org/local/page/pages.php?pagedel=3&sesskey=abc123"
             }
         ],
-        "addpageurl": "https://example.org/local/page/edit.php"
+        "addpageurl": "https://example.org/local/page/edit.php",
+        "bincount": 2,
+        "binurl": "https://example.org/local/page/bin.php"
     }
 }}
 <div class="custompages-list-wrapper">
@@ -115,6 +119,11 @@
             <a href="{{{addpageurl}}}" class="custompages-add btn btn-primary">
                 {{#str}}addpage, local_page{{/str}}
             </a>
+            {{#bincount}}
+            <a href="{{binurl}}" class="custompages-bin btn btn-outline-secondary ms-2">
+                {{#str}}binlink, local_page, {{bincount}}{{/str}}
+            </a>
+            {{/bincount}}
         </div>
     </div>
 </div> 

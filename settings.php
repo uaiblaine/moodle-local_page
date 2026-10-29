@@ -47,6 +47,15 @@ if ($hassiteconfig) {
         0
     );
 
+    // How long a deleted page stays in the recycle bin; see \local_page\local\bin::expiry().
+    $settings[] = new \admin_setting_configduration(
+        'local_page/binexpiry',
+        get_string('binexpiry', 'local_page'),
+        get_string('binexpiry_desc', 'local_page'),
+        \local_page\local\bin::DEFAULT_EXPIRY,
+        DAYSECS
+    );
+
     // Add all the settings to the settings page.
     foreach ($settings as $setting) {
         $settingspage->add($setting);

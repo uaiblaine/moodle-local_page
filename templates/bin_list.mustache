@@ -1,0 +1,103 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_page/bin_list
+
+    The recycle bin of one context: its deleted pages, each with a restore form and a link to the
+    permanent deletion's confirmation, and a link to empty the bin.
+
+    Context variables required for this template:
+    * items - the deleted pages, most recently deleted first; each has id, name, menuname,
+      timedeleted, purgetime (empty when nothing removes it), restoreurl and purgeurl
+    * hasitems - whether the bin holds anything
+    * sesskey - the session key the restore form posts
+    * retention - how long a page stays, readable; empty when it stays until deleted by hand
+    * emptyurl - the confirmation step of emptying the bin
+    * backurl - the pages list of the same context
+
+    Example context (json):
+    {
+        "items": [
+            {
+                "id": 7,
+                "name": "Contact",
+                "menuname": "contact",
+                "timedeleted": "Wednesday, 28 October 2026, 10:12 AM",
+                "purgetime": "Wednesday, 4 November 2026, 10:12 AM",
+                "restoreurl": "https://example.org/local/page/bin.php",
+                "purgeurl": "https://example.org/local/page/bin.php?action=purge&pageid=7"
+            }
+        ],
+        "hasitems": true,
+        "sesskey": "abc123",
+        "retention": "7 days",
+        "emptyurl": "https://example.org/local/page/bin.php?action=empty",
+        "backurl": "https://example.org/local/page/pages.php"
+    }
+}}
+<div class="local-page-bin">
+    <p class="local-page-bin-intro">
+        {{#retention}}{{#str}}binintro, local_page, {{retention}}{{/str}}{{/retention}}
+        {{^retention}}{{#str}}binintro_forever, local_page{{/str}}{{/retention}}
+    </p>
+
+    {{#hasitems}}
+    <table class="table generaltable local-page-bin-table">
+        <thead>
+            <tr>
+                <th scope="col">{{#str}}name, moodle{{/str}}</th>
+                <th scope="col">{{#str}}binaddress, local_page{{/str}}</th>
+                <th scope="col">{{#str}}bindeletedon, local_page{{/str}}</th>
+                <th scope="col">{{#str}}binpurgeon, local_page{{/str}}</th>
+                <th scope="col"><span class="visually-hidden">{{#str}}actions, moodle{{/str}}</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#items}}
+            <tr>
+                <td>{{name}}</td>
+                <td><code>{{menuname}}</code></td>
+                <td>{{timedeleted}}</td>
+                <td>{{#purgetime}}{{purgetime}}{{/purgetime}}{{^purgetime}}&ndash;{{/purgetime}}</td>
+                <td class="text-nowrap">
+                    <form method="post" action="{{restoreurl}}" class="d-inline">
+                        <input type="hidden" name="sesskey" value="{{sesskey}}">
+                        <input type="hidden" name="action" value="restore">
+                        <input type="hidden" name="pageid" value="{{id}}">
+                        <button type="submit" class="btn btn-secondary btn-sm"
+                                aria-label="{{#str}}binrestore_named, local_page, {{name}}{{/str}}">
+                            {{#str}}binrestore, local_page{{/str}}
+                        </button>
+                    </form>
+                    <a href="{{purgeurl}}" class="btn btn-danger btn-sm ms-1"
+                       aria-label="{{#str}}binpurge_named, local_page, {{name}}{{/str}}">
+                        {{#str}}binpurge, local_page{{/str}}
+                    </a>
+                </td>
+            </tr>
+            {{/items}}
+        </tbody>
+    </table>
+    <a href="{{emptyurl}}" class="btn btn-outline-danger">{{#str}}binempty, local_page{{/str}}</a>
+    {{/hasitems}}
+
+    {{^hasitems}}
+    <p class="local-page-bin-empty">{{#str}}binisempty, local_page{{/str}}</p>
+    {{/hasitems}}
+
+    <p class="mt-4"><a href="{{backurl}}">{{#str}}backtolist, local_page{{/str}}</a></p>
+</div>

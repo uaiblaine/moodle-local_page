@@ -58,9 +58,11 @@ final class lifecycle {
     /**
      * Soft-delete the pages of a category that core is about to delete with all its content.
      *
-     * Every live page of the category's context is marked deleted with its friendly URL released —
-     * the shape pages.php gives a page deleted by hand, so a restore by hand meets the same row — and
-     * every row of the context loses its public short codes, which core never deletes on its own.
+     * Every live page of the category's context is marked deleted with its friendly URL released and
+     * its time recorded — the shape {@see bin::delete()} gives a page deleted by hand — and every row
+     * of the context loses its public short codes, which core never deletes on its own. Unlike a page
+     * deleted by hand, these can never be restored, since the context goes with the category: the
+     * bin's task deletes them for good ({@see bin::purge_expired()}).
      *
      * The files are not touched: core purges the whole context right after this returns. Nor are the
      * pages of the category's children, which live in contexts of their own and are handed to this
@@ -86,6 +88,7 @@ final class lifecycle {
                     'id' => $pageid,
                     'deleted' => 1,
                     'menuname' => slug::deleted_name((string) $row->menuname, $pageid),
+                    'timedeleted' => time(),
                 ]);
             }
             links::forget($pageid);

@@ -61,7 +61,6 @@ require_once($CFG->dirroot . '/local/page/lib.php');
 #[CoversFunction('local_page_ogimage_is_servable')]
 #[CoversFunction('local_page_require_editable_page')]
 #[CoversFunction('local_page_pluginfile')]
-#[CoversFunction('local_page_page_in_context')]
 #[CoversFunction('local_page_save_target_context')]
 #[CoversFunction('local_page_pre_course_category_delete')]
 #[CoversFunction('local_page_pre_course_category_delete_move')]
@@ -1141,37 +1140,6 @@ final class lib_test extends \advanced_testcase {
             $this->ask_ogimage_route($system, [(int) $categorypage->id, 'og.png'], $this->ogimage_png()),
             'the system context may not serve a category page image'
         );
-    }
-
-    /**
-     * A row belongs to one context, compared on the stored convention.
-     *
-     * This is the guard the delete action of pages.php applies.
-     *
-     * @return void
-     */
-    public function test_page_in_context_compares_the_stored_convention(): void {
-        $this->resetAfterTest();
-
-        $category = $this->getDataGenerator()->create_category();
-        $categorycontext = \core\context\coursecat::instance($category->id);
-        $system = \context_system::instance();
-
-        $sitepage = $this->pages()->create_page();
-        $categorypage = $this->pages()->create_category_page((int) $category->id);
-
-        $this->assertTrue(\local_page_page_in_context($sitepage, $system));
-        $this->assertTrue(\local_page_page_in_context($categorypage, $categorycontext));
-
-        // Neither belongs to the other's context, which is what the delete action has to know.
-        $this->assertFalse(\local_page_page_in_context($sitepage, $categorycontext));
-        $this->assertFalse(\local_page_page_in_context($categorypage, $system));
-
-        // A row written before contexts existed carries no column at all and is a system page.
-        $legacy = clone $sitepage;
-        unset($legacy->contextid);
-        $this->assertTrue(\local_page_page_in_context($legacy, $system));
-        $this->assertFalse(\local_page_page_in_context($legacy, $categorycontext));
     }
 
     /**

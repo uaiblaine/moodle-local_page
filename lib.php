@@ -97,6 +97,21 @@ function local_page_list_url(\core\context $context): \moodle_url {
 }
 
 /**
+ * The recycle bin's address for a context, with the same context convention as the listing.
+ *
+ * @param \core\context $context Context whose bin is shown
+ * @param array $params Further query parameters (an action, a page id)
+ * @return \moodle_url
+ */
+function local_page_bin_url(\core\context $context, array $params = []): \moodle_url {
+    if (\local_page\local\scope::stored_contextid($context) > 0) {
+        $params['contextid'] = (int) $context->id;
+    }
+
+    return new \moodle_url('/local/page/bin.php', $params);
+}
+
+/**
  * The editor's address for a page, or for a new page in a context.
  *
  * An existing page is named by its id alone: edit.php takes the context from the stored row, so a
@@ -295,25 +310,6 @@ function local_page_require_editable_page(int $pageid, int $contextid = 0): ?\st
     require_capability(\local_page\local\scope::capability($context), $context);
 
     return $row;
-}
-
-/**
- * Whether a stored row belongs to a context.
- *
- * The comparison is on the STORED convention, where the system context is 0 (see
- * {@see \local_page\local\scope}), so a row and a context object can be compared without loading
- * the row's context at all.
- *
- * It is the guard of the listing screen's delete action, kept out of pages.php so that a test can
- * reach it.
- *
- * @param \stdClass $row Row from {local_page}
- * @param \core\context $context Context the caller is acting in
- * @return bool
- * @throws \coding_exception When the context is neither the system nor a course category
- */
-function local_page_page_in_context(\stdClass $row, \core\context $context): bool {
-    return (int) ($row->contextid ?? 0) === \local_page\local\scope::stored_contextid($context);
 }
 
 /**

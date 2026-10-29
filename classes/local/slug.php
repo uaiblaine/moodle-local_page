@@ -213,6 +213,30 @@ final class slug {
     }
 
     /**
+     * The slug a deleted page asks for back when it is restored: deleted_name() undone.
+     *
+     * The -deleted-<id> suffix is removed. What remains is the old slug, cut short only when
+     * deleted_name() had to make room for the suffix in the column. A value without the suffix (a
+     * row deleted before slugs were released) is returned as stored, and an empty result becomes
+     * page-<id>, the name the editor gives a page saved with no slug. Whether the address is still
+     * free is the caller's question: {@see unique_in_context()}.
+     *
+     * @param string $menuname Slug as stored on the deleted row
+     * @param int $id Page id
+     * @return string
+     */
+    public static function restored_name(string $menuname, int $id): string {
+        $suffix = '-deleted-' . $id;
+
+        $base = \core_text::strtolower(trim($menuname));
+        if (self::ends_with($base, $suffix)) {
+            $base = \core_text::substr($base, 0, \core_text::strlen($base) - \core_text::strlen($suffix));
+        }
+
+        return $base === '' ? 'page-' . $id : self::truncate($base);
+    }
+
+    /**
      * Whether a slug is already in use by a page that has not been deleted.
      *
      * Deleted rows are ignored on purpose: their slug has been mangled by deleted_name() and the

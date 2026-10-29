@@ -240,3 +240,25 @@ function local_page_upgrade_text_names_file(string $hay, string $filepath, strin
 
     return false;
 }
+
+/**
+ * Starts the recycle bin's clock for the pages deleted before the bin existed.
+ *
+ * Their time of deletion was never recorded, so they are stamped with the time of the upgrade:
+ * the retention then runs from the upgrade, and nothing is deleted permanently on the first run of
+ * the task. Only rows that are deleted and carry no time yet are written, so a second run changes
+ * nothing.
+ *
+ * Reads only deleted and timedeleted; timedeleted exists from step 2026102900 on.
+ *
+ * @param int $now The time to stamp
+ * @return int Number of rows stamped
+ */
+function local_page_upgrade_stamp_deleted_pages(int $now): int {
+    global $DB;
+
+    $count = $DB->count_records('local_page', ['deleted' => 1, 'timedeleted' => 0]);
+    $DB->set_field('local_page', 'timedeleted', $now, ['deleted' => 1, 'timedeleted' => 0]);
+
+    return $count;
+}

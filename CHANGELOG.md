@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## [1.0.10+uai.16] - 2026-10-29
+
+A recycle bin for deleted pages. One column (`timedeleted`), one upgrade step (2026102900), one
+setting, one scheduled task and three events.
+
+### Added
+- **Recycle bin.** Deleting a page moves it to its context's bin (`bin.php`, linked from the pages
+  screen while it holds anything): the page stops answering and releases its friendly URL, and keeps
+  its row, its files and its public short link. From the bin a page is restored, with its old URL
+  when it is still free and with its id appended when another page took it, or deleted permanently
+  with both file areas, its deployed H5P packages and its short link. Emptying the bin does the
+  latter for every page in it. `\local_page\local\bin` holds the rules; every action acts only on a
+  page of the context the screen's capability was checked in.
+- **Setting `local_page/binexpiry`**, default 7 days: how long a deleted page stays in the bin. 0
+  keeps it until somebody deletes it by hand.
+- **Scheduled task `\local_page\task\purge_deleted_pages`** (daily): deletes permanently every page
+  whose time in the bin is over, and at once every deleted page whose category is gone, since those
+  can never be restored.
+- **Events** `page_deleted`, `page_restored` and `page_purged`.
+
+### Changed
+- **Deleting a page no longer removes its public short link**; the link answers "not found" while
+  the page is in the bin and works again once it is restored. A category deleted with its content
+  still removes its pages' links.
+- `local_page_page_in_context()` is removed: the comparison it made is now the context clause of
+  `bin::delete()`'s lookup.
+
+### Upgrade
+- **Step 2026102900** adds `timedeleted` and stamps the pages deleted before the bin existed with
+  the time of the upgrade, so their retention starts then and nothing is deleted permanently on the
+  task's first run.
+
 ## [1.0.10+uai.15] - 2026-10-28
 
 Every page keeps its embedded files in an area of its own. One upgrade step (2026102800), which

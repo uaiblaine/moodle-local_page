@@ -155,5 +155,20 @@ function xmldb_local_page_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102800, 'local', 'page');
     }
 
+    if ($oldversion < 2026102900) {
+        // A deleted page now waits in a recycle bin, which needs to know when it was deleted. The
+        // pages deleted before this step are stamped with the time of the upgrade, so the
+        // retention starts now and nothing is deleted permanently on the task's first run.
+        $table = new xmldb_table('local_page');
+        $field = new xmldb_field('timedeleted', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'deleted');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        local_page_upgrade_stamp_deleted_pages(time());
+
+        upgrade_plugin_savepoint(true, 2026102900, 'local', 'page');
+    }
+
     return true;
 }

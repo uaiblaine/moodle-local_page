@@ -108,6 +108,10 @@ class pages_list implements renderable, templatable {
          */
         $data->addpageurl = local_page_edit_url($context);
 
+        // The recycle bin of the same context, offered only while it holds something.
+        $data->bincount = \local_page\local\bin::count($context);
+        $data->binurl = local_page_bin_url($context)->out(false);
+
         return $data;
     }
 }
