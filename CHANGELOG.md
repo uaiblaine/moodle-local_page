@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## [1.0.10+uai.20] - 2026-11-04
+
+A page the viewer may not read says nothing more about itself. No table, column, upgrade step or
+capability changes.
+
+### Security
+- **The body no longer names a withheld page's id.** The page type, which core writes as the body's
+  id, was `local-page-id-<id>` even on the "no access" page, so a visitor asking for a site-wide draft
+  by id or slug learned that it existed and its id. It is now `local-page-id-0`, as for a page that is
+  not there.
+- **A category page withheld from a logged-in user names no category.** A draft, an access level the
+  user does not hold or a category withheld from them (`1.0.10+uai.18`) now answers the placeholder a
+  missing page gets, in the system context, at the category addresses and at `?id=`; the row's own
+  "no access" page set its category on `$PAGE`, and the category's id reached the body classes.
+
+### Changed
+- `request::category()` no longer refuses a withheld category before its lookup for a logged-in user:
+  the placeholder above answers the same, after it.
+## [1.0.10+uai.19] - 2026-11-04
+
+A page's access level is applied at its address. No table, column, upgrade step or capability
+changes.
+
+### Security
+- **A page restricted by its access level was served to anybody at its address.** The viewer hands
+  the read rule a `\local_page\custompage`, whose properties come through `__get()`; without
+  `__isset()` PHP answered `empty()` as true for every one of them, so `accesslevel` read as unset and
+  a page kept for, say, `moodle/site:config` rendered in full for an anonymous visitor at `?id=`,
+  `?menuname=`, its friendly URL and its category route. Its embedded files were refused all along:
+  the file route reads a table row. `custompage::__isset()` closes it.
+
+### Removed
+- Upstream's `require_login()` for a page with an access level, in `local_page_render_view()`. It
+  read the access level the same way and never ran; a page whose access level the viewer does not
+  meet is the "no access" page, for visitors too.
+
 ## [1.0.10+uai.18] - 2026-11-04
 
 A category's pages follow the category's own visibility for logged-in users. No table, column,

@@ -40,10 +40,7 @@ use local_page\custompage;
  *    page, with wantsurl pointing back here — for a category that is listed, unlisted, hidden or
  *    not there at all, so an anonymous client cannot tell which category ids exist. The refusal
  *    costs no database statement.
- * 2. Then the category's context. A category that is not there is "no page", and so, for a
- *    logged-in user, is one the site would not name to them ({@see categoryaccess}: hidden, or
- *    unlisted for them): the same placeholder in the system context, before the lookup, so a hidden
- *    category's ids, names and slugs answer exactly like a missing category's.
+ * 2. Then the category's context. A category that is not there is "no page".
  * 3. Then the lookup, scoped to that context: by slug, or by id with the row's own context compared
  *    against the address. A page that is not this address's page is "not found", which a visitor
  *    meets as the same login redirect and a logged-in user as the "no access" page.
@@ -51,7 +48,10 @@ use local_page\custompage;
  *    local_page_user_can_view_page(), at the context read from the row. A visitor those rules
  *    withhold the page from meets the same login refusal as for a page that is not there: one
  *    refusal for visitors, so a public category's withheld slugs cannot be told from its missing
- *    ones, and for a page kept for logged-in readers the login page is the way in.
+ *    ones, and for a page kept for logged-in readers the login page is the way in. A logged-in
+ *    user those rules withhold the page from — a draft, an access level, or a category the site
+ *    would not name to them ({@see categoryaccess}) — meets the placeholder a missing page gets,
+ *    in the system context: the row's own "no access" page would put its category on $PAGE.
  * 5. Then $PAGE: set_category_by_id() first for a category page, because it sets the course and the
  *    context as well and throws once a course or a category is set; set_context() otherwise; then
  *    the URL.
@@ -67,9 +67,8 @@ use local_page\custompage;
  *
  * No require_login() for the page itself, anywhere. This plugin serves pages to visitors who are not
  * logged in on a site that keeps $CFG->forcelogin on: forcelogin is not an ambient gate but a set of
- * explicit checks in core, none of which this class makes. local_page_render_view() still calls
- * require_login() for a page with an access level, but only after this class has answered, so a
- * visitor refused here meets this class's refusal, never that one.
+ * explicit checks in core, none of which this class makes, and local_page_render_view() makes none
+ * either: a page with an access level the viewer does not meet is the "no access" page.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -150,11 +149,6 @@ final class request {
         // Step 2: the category's context. A category that is not there has no page.
         $context = $categoryid > 0 ? \core\context\coursecat::instance($categoryid, IGNORE_MISSING) : false;
 
-        // A logged-in user the site would not name the category to meets the missing category's placeholder.
-        if ($context && !$isvisitor && !categoryaccess::is_reachable($categoryid)) {
-            return self::answer(custompage::load(0), false, $url);
-        }
-
         // Step 3: the lookup, scoped to that context.
         $page = null;
         if ($context) {
@@ -187,6 +181,11 @@ final class request {
          */
         if ($isvisitor && !$canview) {
             return self::refuse($url);
+        }
+
+        // A user they withhold it from meets the missing page's placeholder, which names no category and no page.
+        if (!$canview) {
+            return self::answer(custompage::load(0), false, $url);
         }
 
         // Step 5: $PAGE.
@@ -241,11 +240,12 @@ final class request {
         }
 
         /*
-         * A logged-in user the site would not name the page's category to gets the placeholder in the
-         * system context, as for an id that names nothing: rendering the row's "no access" page would
-         * set that category on $PAGE, and its id would reach the body classes.
+         * A category page withheld from a logged-in user gets the placeholder in the system context, as
+         * for an id that names nothing: rendering the row's "no access" page would set its category on
+         * $PAGE, and the category's id would reach the body classes. A site-wide page renders in the
+         * system context either way, and local_page_render_view() names a withheld one id 0.
          */
-        if ($iscategory && !$canview && !categoryaccess::is_reachable((int) scope::context($page)->instanceid)) {
+        if ($iscategory && !$canview) {
             return self::answer(custompage::load(0), false, $url);
         }
 

@@ -455,8 +455,10 @@ function local_page_head_html(object $page): string {
  *
  * Two entry points serve a page: index.php and \local_page\route\controller\page, the routed
  * category address. Both hand the request's answer here, so the two addresses cannot render
- * different pages. The body is upstream's index.php rendering moved here, including its
- * require_login() for a page with an access level and its html_writer calls.
+ * different pages. The body is upstream's index.php rendering moved here, with its html_writer calls.
+ * Upstream's require_login() for a page with an access level is gone: it read the access level through
+ * empty() on a custompage, which answered true until custompage::__isset() existed, so it never ran,
+ * and the access level is local_page_user_can_view_page()'s to apply.
  *
  * It performs the side effects on $PAGE the page needs before the header is printed — the layout,
  * the title and heading, the body classes, the page type and the head tags, which it registers
@@ -478,13 +480,6 @@ function local_page_render_view(\local_page\local\request $answer): string {
     $custompage = $answer->page;
     $canview = $answer->canview;
     $context = \local_page\local\scope::context($custompage);
-
-    // Check if the custom page has specific access level requirements.
-    if (!empty($custompage->accesslevel)) {
-        require_login(); // Ensure the user is logged in if access level is required.
-
-        // Note: Additional capability checks can be added here based on $custompage->accesslevel.
-    }
 
     // Set the page layout to use.
     $PAGE->set_pagelayout('base'); // Set the page layout.
@@ -522,7 +517,8 @@ function local_page_render_view(\local_page\local\request $answer): string {
         $PAGE->add_body_class('local-page-id-' . (int) $custompage->id);
     }
 
-    $PAGE->set_pagetype('local-page-id-' . max(0, (int) $custompage->id));
+    // The page type becomes the body's id, so a page the viewer may not read is named like a page that is not there.
+    $PAGE->set_pagetype('local-page-id-' . ($canview ? max(0, (int) $custompage->id) : 0));
 
     // Obtain the renderer for the local_page plugin to output the page content.
     $renderer = $PAGE->get_renderer('local_page');

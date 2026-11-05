@@ -406,48 +406,122 @@ final class request_test extends \advanced_testcase {
     }
 
     /**
-     * A hidden category answers a plain user exactly as a missing one does, at both addresses that reach its page.
+     * A category page withheld from a user answers exactly as a missing page does, at every address that reaches it.
      *
-     * The control is a draft in a visible category: the user may not read it either, and still meets
-     * the row's "no access" page in its category, which is the answer a hidden category must not give.
+     * Three ways to be withheld: a hidden category, a draft and an access level the user does not
+     * hold. The control is a live page in the same visible category, which the user reads in its
+     * category.
      *
      * @return void
      */
-    public function test_a_hidden_category_answers_a_user_with_the_placeholder(): void {
+    public function test_a_withheld_category_page_answers_a_user_with_the_placeholder(): void {
         global $PAGE;
 
         $this->resetAfterTest();
         $this->set_router(false);
         $visible = (int) $this->getDataGenerator()->create_category()->id;
         $hidden = (int) $this->getDataGenerator()->create_category(['visible' => 0])->id;
-        $draft = $this->pages()->create_category_page($visible, ['menuname' => 'handbook', 'status' => 'draft']);
-        $page = $this->pages()->create_category_page($hidden, ['menuname' => 'handbook']);
+        $pages = [
+            'hidden category' => [$hidden, $this->pages()->create_category_page($hidden, ['menuname' => 'handbook'])],
+            'draft' => [$visible, $this->pages()->create_category_page($visible, ['menuname' => 'draft', 'status' => 'draft'])],
+            'access level' => [$visible, $this->pages()->create_category_page($visible, [
+                'menuname' => 'config',
+                'accesslevel' => 'moodle/site:config',
+            ])],
+        ];
+        $live = $this->pages()->create_category_page($visible, ['menuname' => 'live']);
         $system = \context_system::instance()->id;
         $this->setUser($this->getDataGenerator()->create_user());
 
-        $answers = [
-            'slug' => fn() => request::category($hidden, 0, 'handbook', public_predicate::class),
-            'category id' => fn() => request::category($hidden, (int) $page->id, '', public_predicate::class),
-            'page id' => fn() => request::legacy((int) $page->id, '', public_predicate::class),
-        ];
-        foreach ($answers as $label => $ask) {
-            $this->fresh_page();
-            $answer = $ask();
-            $this->assertNull($answer->redirect, "{$label}: no redirect");
-            $this->assertFalse($answer->canview, "{$label}: nothing to read");
-            $this->assertSame(0, (int) $answer->page->id, "{$label}: the placeholder, not the row");
-            $this->assertSame($system, $PAGE->context->id, "{$label}: no category on \$PAGE");
+        foreach ($pages as $why => [$categoryid, $page]) {
+            $answers = [
+                'slug' => fn() => request::category($categoryid, 0, (string) $page->menuname, public_predicate::class),
+                'category id' => fn() => request::category($categoryid, (int) $page->id, '', public_predicate::class),
+                'page id' => fn() => request::legacy((int) $page->id, '', public_predicate::class),
+            ];
+            foreach ($answers as $address => $ask) {
+                $label = "{$why}, {$address}";
+                $this->fresh_page();
+                $answer = $ask();
+                $this->assertNull($answer->redirect, "{$label}: no redirect");
+                $this->assertFalse($answer->canview, "{$label}: nothing to read");
+                $this->assertSame(0, (int) $answer->page->id, "{$label}: the placeholder, not the row");
+                $this->assertSame($system, $PAGE->context->id, "{$label}: no category on \$PAGE");
+            }
         }
 
         $this->fresh_page();
-        $control = request::legacy((int) $draft->id, '', public_predicate::class);
-        $this->assertFalse($control->canview, 'control: the draft is withheld too');
-        $this->assertSame((int) $draft->id, (int) $control->page->id, 'control: its own row');
-        $this->assertSame(
-            \core\context\coursecat::instance($visible)->id,
-            $PAGE->context->id,
-            'control: in its category'
+        $control = request::category($visible, 0, 'live', public_predicate::class);
+        $this->assertTrue($control->canview, 'control: the live page is readable');
+        $this->assertSame((int) $live->id, (int) $control->page->id, 'control: its own row');
+        $this->assertSame(\core\context\coursecat::instance($visible)->id, $PAGE->context->id, 'control: in its category');
+    }
+
+    /**
+     * A page's access level is applied at every address the viewer answers on, not only to its files.
+     *
+     * The request hands local_page_user_can_view_page() a custompage, whose properties come through
+     * __get(); a row from the table reached the rule in every other test. Until custompage had
+     * __isset(), empty() read every access level as unset there, and a page kept for site
+     * administrators rendered for an anonymous visitor. The controls are the holders of the
+     * capability, who read both pages, and the body of the same render.
+     *
+     * @return void
+     */
+    public function test_an_access_level_is_applied_at_every_address(): void {
+        $this->resetAfterTest();
+        $this->set_router(false);
+        $categoryid = (int) $this->getDataGenerator()->create_category()->id;
+        $sitepage = $this->pages()->create_page([
+            'menuname' => 'creators',
+            'accesslevel' => 'moodle/course:create',
+            'pagecontent' => '<p>Creators only</p>',
+        ]);
+        $catpage = $this->pages()->create_category_page($categoryid, [
+            'menuname' => 'creators',
+            'accesslevel' => 'moodle/course:create',
+        ]);
+        $asks = [
+            'site page by id' => fn() => request::legacy((int) $sitepage->id, '', public_predicate::class),
+            'site page by slug' => fn() => request::legacy(0, 'creators', public_predicate::class),
+            'category page by slug' => fn() => request::category($categoryid, 0, 'creators', public_predicate::class),
+        ];
+
+        $this->setUser(null);
+        $this->fresh_page();
+        $answer = $asks['site page by id']();
+        $this->assertFalse($answer->canview, 'visitor, site page by id');
+        $body = local_page_render_view($answer);
+        $this->assertStringNotContainsString('Creators only', $body, 'visitor: the body is withheld');
+        $this->assertStringContainsString(get_string('noaccess', 'local_page'), $body, 'visitor: the "no access" page');
+        $this->fresh_page();
+        $this->assertFalse($asks['site page by slug']()->canview, 'visitor, site page by slug');
+
+        $this->setUser($this->getDataGenerator()->create_user());
+        foreach ($asks as $label => $ask) {
+            $this->fresh_page();
+            $this->assertFalse($ask()->canview, "plain user, {$label}");
+        }
+
+        $creator = $this->getDataGenerator()->create_user();
+        $roleid = $this->getDataGenerator()->create_role();
+        $this->getDataGenerator()->create_role_capability(
+            $roleid,
+            ['moodle/course:create' => 'allow'],
+            \context_system::instance()
         );
+        role_assign($roleid, $creator->id, \context_system::instance()->id);
+        accesslib_clear_all_caches_for_unit_testing();
+        $this->setUser($creator);
+        foreach ($asks as $label => $ask) {
+            $this->fresh_page();
+            $this->assertTrue($ask()->canview, "control: a holder of the capability, {$label}");
+        }
+        $this->fresh_page();
+        $this->assertStringContainsString('Creators only', local_page_render_view($asks['site page by id']()));
+
+        // The render registered head tags; the registry is static and outlives this test.
+        \local_page\output\opengraph::set(null);
     }
 
     /**

@@ -34,7 +34,7 @@ global $CFG;
 require_once($CFG->dirroot . '/local/page/lib.php');
 
 /**
- * Tests for local_page_status_badge() and the heading local_page_render_view() builds with it.
+ * Tests for local_page_status_badge() and the heading and body local_page_render_view() build with it.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine
@@ -118,6 +118,31 @@ final class status_badge_test extends \advanced_testcase {
         );
         $this->assertStringContainsString('local-page-status-live', $editor->bodyclasses);
         $this->assertStringContainsString('local-page-id-' . $page->id, $editor->bodyclasses);
+    }
+
+    /**
+     * A page the viewer may not read is named in the body like a page that is not there.
+     *
+     * The page type becomes the body's id (core_renderer::body_id()), so a draft's id there would tell
+     * an anonymous client which ids and slugs exist. The control is the same page once published.
+     *
+     * @return void
+     */
+    public function test_a_withheld_page_names_no_id_in_the_body(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $page = $this->pages()->create_page(['status' => 'draft']);
+        $missing = (int) $page->id + 1000;
+        $this->setUser(null);
+
+        $this->assertSame('page-local-page-id-0', $this->render($missing)->bodyid, 'Precondition: a missing page.');
+        $withheld = $this->render((int) $page->id);
+        $this->assertSame('page-local-page-id-0', $withheld->bodyid, 'A draft is named like a missing page.');
+        $this->assertStringNotContainsString('local-page-id-' . $page->id, $withheld->bodyclasses);
+
+        $DB->set_field('local_page', 'status', 'live', ['id' => $page->id]);
+        $this->assertSame('page-local-page-id-' . $page->id, $this->render((int) $page->id)->bodyid, 'control: published');
     }
 
     /**
