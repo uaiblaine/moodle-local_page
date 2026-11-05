@@ -95,6 +95,19 @@ class custompage {
     }
 
     /**
+     * Magic isset to tell isset() and empty() whether the page data carries a property.
+     *
+     * Without it PHP answers empty() as true for every property of this object, so
+     * local_page_user_can_view_page() read the access level of every page index.php loads as unset.
+     *
+     * @param string $item The property name to check.
+     * @return bool True if the property is set and not null.
+     */
+    public function __isset($item) {
+        return isset($this->pagedata->$item);
+    }
+
+    /**
      * Loads a page from the database by ID.
      *
      * @param int $id The page ID to load.

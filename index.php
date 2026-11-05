@@ -57,13 +57,8 @@ if (!empty($menuname)) {
     $custompage = \local_page\custompage::load($pageid);
 }
 
-// Check if the custom page has specific access level requirements.
-if (!empty($custompage->accesslevel)) {
-    require_login(); // Ensure the user is logged in if access level is required.
-
-    // Note: Additional capability checks can be added here based on $custompage->accesslevel.
-}
-
+// The access level is applied by local_page_user_can_view_page(): a viewer who does not meet it,
+// a visitor included, gets the "no access" page rather than the login page.
 $canview = local_page_user_can_view_page($custompage);
 
 // Set the page layout to use.
