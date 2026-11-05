@@ -67,9 +67,8 @@ use local_page\custompage;
  *
  * No require_login() for the page itself, anywhere. This plugin serves pages to visitors who are not
  * logged in on a site that keeps $CFG->forcelogin on: forcelogin is not an ambient gate but a set of
- * explicit checks in core, none of which this class makes. local_page_render_view() still calls
- * require_login() for a page with an access level, but only after this class has answered, so a
- * visitor refused here meets this class's refusal, never that one.
+ * explicit checks in core, none of which this class makes, and local_page_render_view() makes none
+ * either: a page with an access level the viewer does not meet is the "no access" page.
  *
  * @package    local_page
  * @copyright  2026 Anderson Blaine

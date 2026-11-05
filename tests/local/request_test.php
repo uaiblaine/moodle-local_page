@@ -451,6 +451,73 @@ final class request_test extends \advanced_testcase {
     }
 
     /**
+     * A page's access level is applied at every address the viewer answers on, not only to its files.
+     *
+     * The request hands local_page_user_can_view_page() a custompage, whose properties come through
+     * __get(); a row from the table reached the rule in every other test. Until custompage had
+     * __isset(), empty() read every access level as unset there, and a page kept for site
+     * administrators rendered for an anonymous visitor. The controls are the holders of the
+     * capability, who read both pages, and the body of the same render.
+     *
+     * @return void
+     */
+    public function test_an_access_level_is_applied_at_every_address(): void {
+        $this->resetAfterTest();
+        $this->set_router(false);
+        $categoryid = (int) $this->getDataGenerator()->create_category()->id;
+        $sitepage = $this->pages()->create_page([
+            'menuname' => 'creators',
+            'accesslevel' => 'moodle/course:create',
+            'pagecontent' => '<p>Creators only</p>',
+        ]);
+        $catpage = $this->pages()->create_category_page($categoryid, [
+            'menuname' => 'creators',
+            'accesslevel' => 'moodle/course:create',
+        ]);
+        $asks = [
+            'site page by id' => fn() => request::legacy((int) $sitepage->id, '', public_predicate::class),
+            'site page by slug' => fn() => request::legacy(0, 'creators', public_predicate::class),
+            'category page by slug' => fn() => request::category($categoryid, 0, 'creators', public_predicate::class),
+        ];
+
+        $this->setUser(null);
+        $this->fresh_page();
+        $answer = $asks['site page by id']();
+        $this->assertFalse($answer->canview, 'visitor, site page by id');
+        $body = local_page_render_view($answer);
+        $this->assertStringNotContainsString('Creators only', $body, 'visitor: the body is withheld');
+        $this->assertStringContainsString(get_string('noaccess', 'local_page'), $body, 'visitor: the "no access" page');
+        $this->fresh_page();
+        $this->assertFalse($asks['site page by slug']()->canview, 'visitor, site page by slug');
+
+        $this->setUser($this->getDataGenerator()->create_user());
+        foreach ($asks as $label => $ask) {
+            $this->fresh_page();
+            $this->assertFalse($ask()->canview, "plain user, {$label}");
+        }
+
+        $creator = $this->getDataGenerator()->create_user();
+        $roleid = $this->getDataGenerator()->create_role();
+        $this->getDataGenerator()->create_role_capability(
+            $roleid,
+            ['moodle/course:create' => 'allow'],
+            \context_system::instance()
+        );
+        role_assign($roleid, $creator->id, \context_system::instance()->id);
+        accesslib_clear_all_caches_for_unit_testing();
+        $this->setUser($creator);
+        foreach ($asks as $label => $ask) {
+            $this->fresh_page();
+            $this->assertTrue($ask()->canview, "control: a holder of the capability, {$label}");
+        }
+        $this->fresh_page();
+        $this->assertStringContainsString('Creators only', local_page_render_view($asks['site page by id']()));
+
+        // The render registered head tags; the registry is static and outlives this test.
+        \local_page\output\opengraph::set(null);
+    }
+
+    /**
      * Upstream's addresses: a category page by id is refused to a visitor unless public; site pages are untouched.
      *
      * @return void

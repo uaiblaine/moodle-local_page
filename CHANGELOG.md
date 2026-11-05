@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## [1.0.10+uai.19] - 2026-11-04
+
+A page's access level is applied at its address. No table, column, upgrade step or capability
+changes.
+
+### Security
+- **A page restricted by its access level was served to anybody at its address.** The viewer hands
+  the read rule a `\local_page\custompage`, whose properties come through `__get()`; without
+  `__isset()` PHP answered `empty()` as true for every one of them, so `accesslevel` read as unset and
+  a page kept for, say, `moodle/site:config` rendered in full for an anonymous visitor at `?id=`,
+  `?menuname=`, its friendly URL and its category route. Its embedded files were refused all along:
+  the file route reads a table row. `custompage::__isset()` closes it.
+
+### Removed
+- Upstream's `require_login()` for a page with an access level, in `local_page_render_view()`. It
+  read the access level the same way and never ran; a page whose access level the viewer does not
+  meet is the "no access" page, for visitors too.
+
 ## [1.0.10+uai.18] - 2026-11-04
 
 A category's pages follow the category's own visibility for logged-in users. No table, column,

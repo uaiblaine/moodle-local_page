@@ -181,9 +181,11 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   `?menuname=` addresses) can only apply the predicate AFTER its lookup,
   because an id names no category until the row is read. `redirect()` throws
   under PHPUnit with no URL in the message, which is why the class RETURNS its
-  target and `index.php` calls `redirect()`; the upstream `require_login()` for
-  a page with an access level runs in `local_page_render_view()`, after that
-  redirect, on both the script and the route.
+  target and `index.php` calls `redirect()`. Nothing calls `require_login()` for a
+  page with an access level any more: upstream's call read it through `empty()` on a
+  `custompage`, which was always true until `custompage::__isset()` existed, so it
+  never ran. **Any `isset()`/`empty()` on a `custompage` needs that method**; `??`
+  goes through `__get()` and worked all along, which is why only the access level broke.
 - **Every page's embedded files live under its own id, and nothing serves item id 0.**
   `pages_edit_product_form::pagecontent_itemid()`, `renderer::save_page()`,
   `custompage::rewrite_file_urls()` and the `pagecontent` branch of `local_page_pluginfile()` all
