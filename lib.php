@@ -517,7 +517,8 @@ function local_page_render_view(\local_page\local\request $answer): string {
         $PAGE->add_body_class('local-page-id-' . (int) $custompage->id);
     }
 
-    $PAGE->set_pagetype('local-page-id-' . max(0, (int) $custompage->id));
+    // The page type becomes the body's id, so a page the viewer may not read is named like a page that is not there.
+    $PAGE->set_pagetype('local-page-id-' . ($canview ? max(0, (int) $custompage->id) : 0));
 
     // Obtain the renderer for the local_page plugin to output the page content.
     $renderer = $PAGE->get_renderer('local_page');

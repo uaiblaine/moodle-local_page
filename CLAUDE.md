@@ -161,8 +161,11 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   the other half, `\local_page\local\categoryaccess::is_reachable()`: core's
   hidden flag and `local_unlistedcourses`' per-viewer discoverability (fails
   OPEN when that plugin is absent, unlike `publicaccess`), with the category's
-  page authors exempt; the request answers a withheld category with the
-  missing category's placeholder in the system context. Its optional `$predicate`
+  page authors exempt. The request answers ANY category page withheld from a
+  logged-in user (hidden category, draft, access level) with the missing page's
+  placeholder in the system context, and `local_page_render_view()` names a
+  page the viewer may not read `local-page-id-0` in the page type (the body's
+  id). Its optional `$predicate`
   argument exists for tests only. `local_page_ogimage_is_servable()` does NOT
   carry the clause and must not: an og:image is fetched by anonymous scrapers
   and is gated on publication state alone (decision D8). Change either only
