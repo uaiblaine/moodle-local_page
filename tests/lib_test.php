@@ -1286,6 +1286,39 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
+     * A logged-in user reads a category's page, and its files, only where core would show them the category.
+     *
+     * The two pages differ only in whether their category is hidden. A user who may see hidden
+     * categories there is the control on the hidden one, and an author of its pages previews it.
+     *
+     * @return void
+     */
+    public function test_a_category_page_reaches_a_logged_in_user_only_where_the_category_is_shown(): void {
+        $this->resetAfterTest();
+        $visible = (int) $this->getDataGenerator()->create_category()->id;
+        $hidden = (int) $this->getDataGenerator()->create_category(['visible' => 0])->id;
+        $context = \core\context\coursecat::instance($hidden);
+        $shown = $this->pages()->create_category_page($visible);
+        $page = $this->pages()->create_category_page($hidden, ['pagecontent' => '<p><img src="@@PLUGINFILE@@/body.png"></p>']);
+        $this->store_pagecontent_file((int) $context->id, (int) $page->id, 'body.png');
+        $file = [(int) $page->id, 'body.png'];
+
+        $this->setUser($this->getDataGenerator()->create_user());
+        $this->assertTrue(\local_page_user_can_view_page($shown), 'plain user, visible category');
+        $this->assertFalse(\local_page_user_can_view_page($page), 'plain user, hidden category');
+        $this->assertFalse(
+            \local_page_pluginfile(null, null, $context, 'pagecontent', $file, false, ['dontdie' => true]),
+            'the route refuses the hidden category\'s file'
+        );
+
+        $this->setUser($this->user_holding_at('moodle/category:viewhiddencategories', $context));
+        $this->assertTrue(\local_page_user_can_view_page($page), 'may see hidden categories there');
+
+        $this->setUser($this->user_holding_at('local/page:managecategorypages', $context));
+        $this->assertTrue(\local_page_user_can_view_page($page), 'author of the category\'s pages');
+    }
+
+    /**
      * A public short code for a page, written straight into core's table.
      *
      * @param int $pageid Page id.

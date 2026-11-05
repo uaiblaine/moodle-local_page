@@ -114,6 +114,8 @@ classes/local/links.php     The one place a page's addresses are spelled: script
 classes/route/controller/page.php  The routed address /local_page/category/{category}/{slug}.
 classes/shortlink_handler.php      Resolves the plugin's /p/ codes for core's shortlink route.
 classes/local/publicaccess.php  Fail-closed adapter: is this category public; who is a visitor.
+classes/local/categoryaccess.php  Whether a logged-in user may reach a category's pages: core's
+                            visibility, then local_unlistedcourses' discoverability.
 classes/local/scope.php     Which context a page lives in, and which capability governs it.
 classes/local/ogimage.php   A page's Open Graph image: which file, its hashed address, its size.
 classes/local/catalogue.php A category's pages the viewer may read, as plain data for another
@@ -155,7 +157,12 @@ docs/nginx-runbook.md  The optional production NGINX steps (router fallback, roo
   public. That clause is what keeps a private category's embedded files away
   from visitors — the request class refuses them the page, but the file route
   asks this function alone. It is asked after the `moodle/site:config` shortcut
-  and never for a logged-in user or a site-wide page. Its optional `$predicate`
+  and never for a logged-in user or a site-wide page. A logged-in user meets
+  the other half, `\local_page\local\categoryaccess::is_reachable()`: core's
+  hidden flag and `local_unlistedcourses`' per-viewer discoverability (fails
+  OPEN when that plugin is absent, unlike `publicaccess`), with the category's
+  page authors exempt; the request answers a withheld category with the
+  missing category's placeholder in the system context. Its optional `$predicate`
   argument exists for tests only. `local_page_ogimage_is_servable()` does NOT
   carry the clause and must not: an og:image is fetched by anonymous scrapers
   and is gated on publication state alone (decision D8). Change either only

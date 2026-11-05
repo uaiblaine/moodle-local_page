@@ -38,7 +38,8 @@ namespace local_page\local;
  * 3. Then one statement: the category's own pages - never another context's, never a subcategory's -
  *    that are not deleted and are live.
  * 4. Then each row inside its publish window, and through local_page_user_can_view_page(), the whole
- *    read-side rule (access level, logged-in only, the public clause).
+ *    read-side rule (access level, logged-in only, the public clause, and for a logged-in viewer the
+ *    category's own visibility: a hidden or unlisted category lists nothing to whom it is withheld).
  *
  * Steps 3 and 4 ask for a LIVE page inside its window even of somebody who may edit pages, whom the
  * page address itself lets preview a draft: a list is what readers see, and a draft there would look

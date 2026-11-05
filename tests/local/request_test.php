@@ -406,6 +406,51 @@ final class request_test extends \advanced_testcase {
     }
 
     /**
+     * A hidden category answers a plain user exactly as a missing one does, at both addresses that reach its page.
+     *
+     * The control is a draft in a visible category: the user may not read it either, and still meets
+     * the row's "no access" page in its category, which is the answer a hidden category must not give.
+     *
+     * @return void
+     */
+    public function test_a_hidden_category_answers_a_user_with_the_placeholder(): void {
+        global $PAGE;
+
+        $this->resetAfterTest();
+        $this->set_router(false);
+        $visible = (int) $this->getDataGenerator()->create_category()->id;
+        $hidden = (int) $this->getDataGenerator()->create_category(['visible' => 0])->id;
+        $draft = $this->pages()->create_category_page($visible, ['menuname' => 'handbook', 'status' => 'draft']);
+        $page = $this->pages()->create_category_page($hidden, ['menuname' => 'handbook']);
+        $system = \context_system::instance()->id;
+        $this->setUser($this->getDataGenerator()->create_user());
+
+        $answers = [
+            'slug' => fn() => request::category($hidden, 0, 'handbook', public_predicate::class),
+            'category id' => fn() => request::category($hidden, (int) $page->id, '', public_predicate::class),
+            'page id' => fn() => request::legacy((int) $page->id, '', public_predicate::class),
+        ];
+        foreach ($answers as $label => $ask) {
+            $this->fresh_page();
+            $answer = $ask();
+            $this->assertNull($answer->redirect, "{$label}: no redirect");
+            $this->assertFalse($answer->canview, "{$label}: nothing to read");
+            $this->assertSame(0, (int) $answer->page->id, "{$label}: the placeholder, not the row");
+            $this->assertSame($system, $PAGE->context->id, "{$label}: no category on \$PAGE");
+        }
+
+        $this->fresh_page();
+        $control = request::legacy((int) $draft->id, '', public_predicate::class);
+        $this->assertFalse($control->canview, 'control: the draft is withheld too');
+        $this->assertSame((int) $draft->id, (int) $control->page->id, 'control: its own row');
+        $this->assertSame(
+            \core\context\coursecat::instance($visible)->id,
+            $PAGE->context->id,
+            'control: in its category'
+        );
+    }
+
+    /**
      * Upstream's addresses: a category page by id is refused to a visitor unless public; site pages are untouched.
      *
      * @return void

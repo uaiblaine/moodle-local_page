@@ -633,7 +633,9 @@ function local_page_apply_publish_gate(\stdClass $record, \core\context $context
  * \local_page\local\publicaccess says its category is public; that adapter fails closed when
  * local_unlistedcourses is not installed. The clause lives here, not only in the viewer, because
  * the pluginfile route asks this function about a category page's embedded files. It never applies
- * to a logged-in user or to a site-wide page.
+ * to a logged-in user or to a site-wide page. A logged-in user meets the other half instead: a
+ * category page reaches them only where \local_page\local\categoryaccess says the site would name
+ * its category to them (core's hidden flag, and local_unlistedcourses' unlisted state when installed).
  *
  * @param object $page Row from {local_page} (stdClass) or {@see \local_page\custompage} with the same fields
  * @param string|null $predicate Public predicate class for the category clause; tests pass a double
@@ -666,6 +668,15 @@ function local_page_user_can_view_page(object $page, ?string $predicate = null):
         $context->contextlevel == CONTEXT_COURSECAT
         && \local_page\local\publicaccess::is_visitor()
         && !\local_page\local\publicaccess::is_public((int) $context->instanceid, $predicate)
+    ) {
+        return false;
+    }
+
+    // A logged-in user reads it only where the site would name its category to them: not hidden, not unlisted.
+    if (
+        $context->contextlevel == CONTEXT_COURSECAT
+        && !\local_page\local\publicaccess::is_visitor()
+        && !\local_page\local\categoryaccess::is_reachable((int) $context->instanceid)
     ) {
         return false;
     }
