@@ -35,8 +35,8 @@ namespace local_page\local;
  *
  * Only a visitor ({@see is_visitor()}) is ever asked about, by two callers: the request class,
  * before it looks anything up, and local_page_user_can_view_page(), which also decides whether a
- * category page's embedded files are served. What a logged-in user may read is decided by the
- * page's own rules, at the page's own context.
+ * category page's embedded files are served. What a logged-in user may read is decided by
+ * {@see categoryaccess} and the page's own rules, at the page's own context.
  *
  * Fails closed: when the predicate class is missing (local_unlistedcourses not installed, or a
  * broken deploy) nothing is public and the visitor gets the login page. Neither plugin declares a

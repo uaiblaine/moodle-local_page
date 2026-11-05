@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [1.0.10+uai.18] - 2026-11-04
+
+A category's pages follow the category's own visibility for logged-in users. No table, column,
+upgrade step or capability changes.
+
+### Security
+- **A hidden or unlisted category no longer serves its pages to every logged-in user.** Visitors were
+  already refused unless `local_unlistedcourses` called the category public; a logged-in user now
+  reads a category's pages, and their embedded files, only where the site would name the category to
+  them: core's visibility (a hidden category needs `moodle/category:viewhiddencategories` there) and,
+  when `local_unlistedcourses` is installed, its discoverability of an unlisted category. Whoever may
+  author the category's pages still reaches them. The category addresses and the `?id=` address
+  answer such a user with the placeholder a missing category gets, in the system context, so the
+  category's id no longer reaches the page. `\local_page\local\catalogue::for_viewer()` lists
+  nothing for them. New class: `\local_page\local\categoryaccess`.
+
 ## [1.0.10+uai.17] - 2026-10-29
 
 Files nobody uses are removed. No table, column or upgrade step changes; the version bump registers a

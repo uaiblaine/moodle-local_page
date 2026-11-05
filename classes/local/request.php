@@ -40,7 +40,10 @@ use local_page\custompage;
  *    page, with wantsurl pointing back here — for a category that is listed, unlisted, hidden or
  *    not there at all, so an anonymous client cannot tell which category ids exist. The refusal
  *    costs no database statement.
- * 2. Then the category's context. A category that is not there is "no page".
+ * 2. Then the category's context. A category that is not there is "no page", and so, for a
+ *    logged-in user, is one the site would not name to them ({@see categoryaccess}: hidden, or
+ *    unlisted for them): the same placeholder in the system context, before the lookup, so a hidden
+ *    category's ids, names and slugs answer exactly like a missing category's.
  * 3. Then the lookup, scoped to that context: by slug, or by id with the row's own context compared
  *    against the address. A page that is not this address's page is "not found", which a visitor
  *    meets as the same login redirect and a logged-in user as the "no access" page.
@@ -147,6 +150,11 @@ final class request {
         // Step 2: the category's context. A category that is not there has no page.
         $context = $categoryid > 0 ? \core\context\coursecat::instance($categoryid, IGNORE_MISSING) : false;
 
+        // A logged-in user the site would not name the category to meets the missing category's placeholder.
+        if ($context && !$isvisitor && !categoryaccess::is_reachable($categoryid)) {
+            return self::answer(custompage::load(0), false, $url);
+        }
+
         // Step 3: the lookup, scoped to that context.
         $page = null;
         if ($context) {
@@ -230,6 +238,15 @@ final class request {
         $iscategory = (int) $page->id > 0 && scope::is_category($page);
         if ($iscategory && publicaccess::is_visitor() && !$canview) {
             return self::refuse($url);
+        }
+
+        /*
+         * A logged-in user the site would not name the page's category to gets the placeholder in the
+         * system context, as for an id that names nothing: rendering the row's "no access" page would
+         * set that category on $PAGE, and its id would reach the body classes.
+         */
+        if ($iscategory && !$canview && !categoryaccess::is_reachable((int) scope::context($page)->instanceid)) {
+            return self::answer(custompage::load(0), false, $url);
         }
 
         // Only now, with the rules and the predicate answered: a readable category page is read at its route.

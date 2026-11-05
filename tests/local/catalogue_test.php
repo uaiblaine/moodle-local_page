@@ -114,6 +114,32 @@ final class catalogue_test extends \advanced_testcase {
     }
 
     /**
+     * A hidden category lists nothing to a plain user, and its pages to one who may see hidden categories there.
+     *
+     * @return void
+     */
+    public function test_a_hidden_category_lists_nothing_to_whom_it_is_hidden(): void {
+        $hidden = (int) $this->getDataGenerator()->create_category(['visible' => 0])->id;
+        $context = \core\context\coursecat::instance($hidden);
+        $this->pages()->create_category_page($hidden, ['pagename' => 'Handbook', 'menuname' => 'handbook']);
+
+        $this->setUser($this->getDataGenerator()->create_user());
+        $this->assertSame([], catalogue::for_viewer($hidden, public_predicate::class), 'plain user');
+
+        $user = $this->getDataGenerator()->create_user();
+        $roleid = $this->getDataGenerator()->create_role();
+        $this->getDataGenerator()->create_role_capability(
+            $roleid,
+            ['moodle/category:viewhiddencategories' => 'allow'],
+            $context
+        );
+        role_assign($roleid, $user->id, $context->id);
+        accesslib_clear_all_caches_for_unit_testing();
+        $this->setUser($user);
+        $this->assertSame(['Handbook'], self::names(catalogue::for_viewer($hidden, public_predicate::class)), 'control');
+    }
+
+    /**
      * The guest account is a visitor: refused in a private category, served in a public one.
      *
      * @return void
