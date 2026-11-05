@@ -561,9 +561,14 @@ Four branches follow it:
   theme's pages strip (T2) lists a category's pages through, as `1.0.10+uai.13`. It is the tip of
   the fork.
 - `upstream-security-fixes` (on `cf3df54`, upstream's own `main`, unchanged since
-  the fork): the seven security fixes worth offering upstream, one commit each,
-  release `v1.0.11` unreleased, green on the legs upstream's own `ci.yml` runs.
-  The upstream pull request is opened only when the owner says so (decision D10).
+  the fork): the eight fixes worth offering upstream (seven in code, one in the README),
+  one commit each, release `v1.0.11` unreleased. The eighth, `7a8a5c4` after the release
+  commit, is the access-level bypass this fork fixed in `db350ef` (`custompage::__isset()`).
+  On the four legs upstream's own `ci.yml` runs (PHP 8.2/8.3 x pgsql/mariadb, 5.1) PHPUnit,
+  phpdoc, validate, savepoints, mustache and grunt pass; `mdl ci`'s phpcs, codebase and
+  leftover fail on upstream's own lines (`lib.php:303`, no `COPYING.txt`, markers in its
+  workflows), which the branch leaves alone. The upstream pull request is opened only
+  when the owner says so (decision D10).
 
 There is never a release tag (D11): installs come from git, syncs from upstream
 by merge. The theme follow-ups T1-T3 are recorded, with the facts a later session needs, in the
